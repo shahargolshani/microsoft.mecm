@@ -1,0 +1,302 @@
+---
+# Integration tests for application and application_info modules
+
+- name: Set test variables
+  ansible.builtin.set_fact:
+    test_app_name: "{{ unique_test_id }}-app"
+
+- name: Test application lifecycle
+  block:
+    # -----------------------------------------------
+    # CREATE - check mode
+    # -----------------------------------------------
+    - name: Create application - check mode
+      microsoft.mecm.application:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        description: "Test application created by integration test"
+        publisher: "Test Publisher"
+        software_version: "1.0.0"
+        optional_reference: "REF-001"
+        auto_install: true
+        owners:
+          - "owner1"
+          - "owner2"
+        support_contacts:
+          - "contact1"
+          - "contact2"
+        localized_name: "Test App Display"
+        localized_description: "Localized test description"
+        user_documentation: "https://example.com/docs"
+        link_text: "More Info"
+        keyword:
+          - "test"
+          - "ansible"
+          - "integration"
+        privacy_url: "https://example.com/privacy"
+        is_featured: true
+        state: present
+      check_mode: true
+      register: _create_check
+
+    - name: Verify application does not exist after check mode create
+      microsoft.mecm.application_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+      register: _info_after_create_check
+
+    - name: Assert check mode create
+      ansible.builtin.assert:
+        that:
+          - _create_check is changed
+          - _info_after_create_check.applications | length == 0
+
+    # -----------------------------------------------
+    # CREATE - with all fields
+    # -----------------------------------------------
+    - name: Create application with all fields
+      microsoft.mecm.application: &create_app
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        description: "Test application created by integration test"
+        publisher: "Test Publisher"
+        software_version: "1.0.0"
+        optional_reference: "REF-001"
+        auto_install: true
+        owners:
+          - "owner1"
+          - "owner2"
+        support_contacts:
+          - "contact1"
+          - "contact2"
+        localized_name: "Test App Display"
+        localized_description: "Localized test description"
+        user_documentation: "https://example.com/docs"
+        link_text: "More Info"
+        keyword:
+          - "test"
+          - "ansible"
+          - "integration"
+        privacy_url: "https://example.com/privacy"
+        is_featured: true
+        state: present
+      register: _create_app
+
+    # -----------------------------------------------
+    # CREATE - idempotency
+    # -----------------------------------------------
+    - name: Create application - idempotency
+      microsoft.mecm.application: *create_app
+      register: _create_app_idempotent
+
+    # -----------------------------------------------
+    # INFO - verify all fields match creation params
+    # -----------------------------------------------
+    - name: Get application info after creation
+      microsoft.mecm.application_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+      register: _app_info
+
+    - name: Assert creation, idempotency, and info values
+      ansible.builtin.assert:
+        that:
+          - _create_app is changed
+          - _create_app_idempotent is not changed
+          - _app_info.applications | length == 1
+          - _app_info.applications[0].name == test_app_name
+          - _app_info.applications[0].description == "Test application created by integration test"
+          - _app_info.applications[0].publisher == "Test Publisher"
+          - _app_info.applications[0].software_version == "1.0.0"
+          - _app_info.applications[0].optional_reference == "REF-001"
+          - _app_info.applications[0].owners | sort == ["owner1", "owner2"]
+          - _app_info.applications[0].support_contacts | sort == ["contact1", "contact2"]
+          - _app_info.applications[0].localized_name == "Test App Display"
+          - _app_info.applications[0].localized_description == "Localized test description"
+          - _app_info.applications[0].user_documentation == "https://example.com/docs"
+          - _app_info.applications[0].link_text == "More Info"
+          - _app_info.applications[0].keyword | sort == ["ansible", "integration", "test"]
+          - _app_info.applications[0].privacy_url == "https://example.com/privacy"
+          - _app_info.applications[0].is_featured == true
+
+    # -----------------------------------------------
+    # UPDATE - owners list (add/remove members)
+    # -----------------------------------------------
+    - name: Update application - modify owners list
+      microsoft.mecm.application: &update_owners
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        owners:
+          - "owner2"
+          - "owner3"
+      register: _update_owners
+
+    - name: Update application - modify owners list idempotency
+      microsoft.mecm.application: *update_owners
+      register: _update_owners_idempotent
+
+    - name: Get application info after owner update
+      microsoft.mecm.application_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+      register: _info_after_owner_update
+
+    - name: Assert owner update added owner3 and removed owner1
+      ansible.builtin.assert:
+        that:
+          - _update_owners is changed
+          - _update_owners_idempotent is not changed
+          - _info_after_owner_update.applications[0].owners | sort == ["owner2", "owner3"]
+
+    # -----------------------------------------------
+    # UPDATE - set field to empty string to erase it
+    # -----------------------------------------------
+    - name: Update application - erase description with empty string
+      microsoft.mecm.application: &update_erase
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        description: ""
+      register: _update_erase
+
+    - name: Update application - erase description idempotency
+      microsoft.mecm.application: *update_erase
+      register: _update_erase_idempotent
+
+    - name: Get application info after erase
+      microsoft.mecm.application_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+      register: _info_after_erase
+
+    - name: Assert description was erased
+      ansible.builtin.assert:
+        that:
+          - _update_erase is changed
+          - _update_erase_idempotent is not changed
+          - _info_after_erase.applications[0].description == "" or _info_after_erase.applications[0].description is none
+
+    # -----------------------------------------------
+    # UPDATE - check mode
+    # -----------------------------------------------
+    - name: Update application - check mode
+      microsoft.mecm.application:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        publisher: "Updated Publisher"
+      check_mode: true
+      register: _update_check
+
+    - name: Get application info after check mode update
+      microsoft.mecm.application_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+      register: _info_after_update_check
+
+    - name: Assert check mode update did not apply
+      ansible.builtin.assert:
+        that:
+          - _update_check is changed
+          - _info_after_update_check.applications[0].publisher == "Test Publisher"
+
+    # -----------------------------------------------
+    # UPDATE - actual change and idempotency
+    # -----------------------------------------------
+    - name: Update application - change publisher
+      microsoft.mecm.application: &update_publisher
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        publisher: "Updated Publisher"
+      register: _update_publisher
+
+    - name: Update application - change publisher idempotency
+      microsoft.mecm.application: *update_publisher
+      register: _update_publisher_idempotent
+
+    - name: Assert update and idempotency
+      ansible.builtin.assert:
+        that:
+          - _update_publisher is changed
+          - _update_publisher_idempotent is not changed
+
+    # -----------------------------------------------
+    # OMIT fields - verify no change when params are absent
+    # -----------------------------------------------
+    - name: Run with minimal params - check mode
+      microsoft.mecm.application:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+      check_mode: true
+      register: _minimal_check
+
+    - name: Run with minimal params
+      microsoft.mecm.application:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+      register: _minimal_run
+
+    - name: Assert omitted fields do not trigger changes
+      ansible.builtin.assert:
+        that:
+          - _minimal_check is not changed
+          - _minimal_run is not changed
+
+    # -----------------------------------------------
+    # DELETE - check mode
+    # -----------------------------------------------
+    - name: Delete application - check mode
+      microsoft.mecm.application:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        state: absent
+      check_mode: true
+      register: _delete_check
+
+    - name: Verify application still exists after check mode delete
+      microsoft.mecm.application_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+      register: _info_after_delete_check
+
+    - name: Assert check mode delete did not remove
+      ansible.builtin.assert:
+        that:
+          - _delete_check is changed
+          - _info_after_delete_check.applications | length == 1
+
+    # -----------------------------------------------
+    # DELETE - actual
+    # -----------------------------------------------
+    - name: Delete application
+      microsoft.mecm.application: &delete_app
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        state: absent
+      register: _delete_app
+
+    # -----------------------------------------------
+    # DELETE - idempotency
+    # -----------------------------------------------
+    - name: Delete application - idempotency
+      microsoft.mecm.application: *delete_app
+      register: _delete_app_idempotent
+
+    - name: Verify application no longer exists
+      microsoft.mecm.application_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+      register: _info_after_delete
+
+    - name: Assert delete and idempotency
+      ansible.builtin.assert:
+        that:
+          - _delete_app is changed
+          - _delete_app_idempotent is not changed
+          - _info_after_delete.applications | length == 0
+
+  always:
+    - name: Cleanup - ensure test application is removed
+      microsoft.mecm.application:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        state: absent
+      ignore_errors: true
