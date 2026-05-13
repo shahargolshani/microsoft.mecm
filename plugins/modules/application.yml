@@ -1,0 +1,220 @@
+---
+# Copyright: (c) 2025, Ansible Project
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+DOCUMENTATION:
+  module: application
+  short_description: Create, update, or delete applications in Microsoft Endpoint Configuration Manager (MECM)
+  description:
+    - This module creates, updates, or deletes applications in a Configuration Manager site.
+    - Uses the New-CMApplication, Set-CMApplication, and Remove-CMApplication cmdlets.
+    - For more information, see
+      U(https://learn.microsoft.com/en-us/powershell/module/configurationmanager/new-cmapplication).
+  version_added: "1.1.0"
+  extends_documentation_fragment:
+    - microsoft.mecm.uses_cm_ps_module
+  requirements:
+    - Microsoft Endpoint Configuration Manager PowerShell module (ConfigurationManager)
+    - Administrative access to Microsoft Endpoint Configuration Manager site server
+  options:
+    site_code:
+      description:
+        - The site code of the Configuration Manager site to connect to.
+        - This determines which CM site drive to use and is required for connecting to the correct domain.
+      type: str
+      required: true
+    name:
+      description:
+        - The name of the application to create or update.
+        - The application name cannot be changed.
+        - This module uses the application name for Idempotency checks, and only SetByName method is implemented.
+      type: str
+      required: true
+    state:
+      description:
+        - Whether the application should be present or absent.
+        - Removing an application will also remove any associated deployments.
+      type: str
+      choices:
+        - present
+        - absent
+      default: present
+    description:
+      description:
+        - An administrator comment for the application.
+        - Maximum length is 2048 characters.
+      type: str
+      required: false
+    publisher:
+      description:
+        - Vendor information for the application.
+        - Maximum length is 256 characters.
+      type: str
+      required: false
+    software_version:
+      description:
+        - A version string for the application.
+        - Maximum length is 64 characters.
+      type: str
+      required: false
+    optional_reference:
+      description:
+        - An optional string to help find the application in the console.
+        - Maximum length is 256 characters.
+      type: str
+      required: false
+    release_date:
+      description:
+        - The release date of the application.
+        - Accepts a date string that can be parsed by PowerShell's Get-Date cmdlet.
+      type: str
+      required: false
+    auto_install:
+      description:
+        - Allow the application to be installed from the Install Application task sequence step without being deployed.
+      type: bool
+      required: false
+    owners:
+      description:
+        - The list of administrative users who are responsible for this application.
+        - This is a declarative list. Owners not in this list will be removed from the application.
+        - Owners in this list that are not on the application will be added.
+      type: list
+      elements: str
+      required: false
+    support_contacts:
+      description:
+        - The list of administrative users that end users can contact for help with this application.
+        - This is a declarative list. Contacts not in this list will be removed from the application.
+        - Contacts in this list that are not on the application will be added.
+      type: list
+      elements: str
+      required: false
+    localized_name:
+      description:
+        - The application name as it appears in Software Center.
+        - Maximum length is 256 characters.
+      type: str
+      required: false
+    localized_description:
+      description:
+        - A description of the application as it appears in Software Center.
+        - Maximum length is 2048 characters.
+      type: str
+      required: false
+    user_documentation:
+      description:
+        - Location of a file or URL from which Software Center users can get more information about the application.
+        - Maximum length is 256 characters.
+      type: str
+      required: false
+    link_text:
+      description:
+        - Text shown in place of "Additional information" in Software Center when O(user_documentation) is set.
+        - Maximum length is 128 characters.
+      type: str
+      required: false
+    keyword:
+      description:
+        - Keywords to help Software Center users search for the application.
+      type: list
+      elements: str
+      required: false
+    privacy_url:
+      description:
+        - URL to the privacy statement for the application.
+        - Must be a valid URL. Maximum length is 128 characters.
+      type: str
+      required: false
+    is_featured:
+      description:
+        - Display this application as a featured app and highlight it in the Company Portal.
+      type: bool
+      required: false
+    default_language_id:
+      description:
+        - Language ID for the default Software Center language.
+        - This is the decimal equivalent of the Windows language ID, for example C(1033) for English (United States).
+        - If not specified, the default language will be the first language in the list of available languages in the MECM site.
+      type: int
+      required: false
+  notes:
+    - This module requires the Microsoft Endpoint Configuration Manager Console to be installed on the target machine.
+    - The module uses New-CMApplication, Set-CMApplication, and Remove-CMApplication cmdlets to create, update, and delete applications.
+    - This module supports idempotency and check mode.
+    - "B(Permissions): Requires administrative access to create, update, and delete MECM applications."
+  author:
+    - Ansible Ecosystem Engineering team (@ansible)
+    - Shahar Golshani (@shahargolshani)
+
+EXAMPLES: |
+  - name: Create the PS drive for the site
+    microsoft.mecm.site_ps_drive:
+      site_code: XYZ
+      state: present
+
+  - name: Create a simple application
+    microsoft.mecm.application:
+      site_code: "XYZ"
+      name: "My Application"
+      description: "Application managed by Ansible"
+      publisher: "Red Hat"
+      software_version: "1.0.0"
+      keyword:
+        - ansible
+        - managed
+      state: present
+
+  - name: Create a featured application with full details
+    microsoft.mecm.application:
+      site_code: "XYZ"
+      name: "Red Hat App"
+      description: "Enterprise application"
+      publisher: "Red Hat"
+      software_version: "2.0.0"
+      auto_install: true
+      owners:
+        - "Administrator"
+        - "SuperUser"
+      support_contacts:
+        - "Administrator"
+        - "HelpDesk"
+      localized_name: "Red Hat App"
+      localized_description: "Enterprise application for all users"
+      keyword:
+        - redhat
+        - enterprise
+      privacy_url: "https://redhat.com/privacy"
+      is_featured: true
+      state: present
+
+  - name: Update an existing application
+    microsoft.mecm.application:
+      site_code: "XYZ"
+      name: "My Application"
+      description: "Updated description"
+      software_version: "1.1.0"
+      keyword:
+        - ansible
+        - updated
+
+  - name: Remove an application
+    microsoft.mecm.application:
+      site_code: "XYZ"
+      name: "My Application"
+      state: absent
+
+RETURN:
+  application:
+    description: Identifying information about the application.
+    returned: on success
+    type: dict
+    sample: |-
+      {
+        "name": "My Application",
+        "id": "16777001",
+        "publisher": "Red Hat",
+        "software_version": "1.0.0",
+        "is_deployed": false,
+        "is_enabled": true
+      }

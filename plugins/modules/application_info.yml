@@ -1,0 +1,198 @@
+---
+# Copyright: (c) 2025, Ansible Project
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+DOCUMENTATION:
+  module: application_info
+  short_description: Gather information about Microsoft Endpoint Configuration Manager (MECM) applications
+  description:
+    - This module gathers information about one or more applications in a Configuration Manager site.
+    - Uses the Get-CMApplication cmdlet.
+    - This is a read-only module that does not make any changes to the system.
+  version_added: "1.1.0"
+  extends_documentation_fragment:
+    - microsoft.mecm.uses_cm_ps_module
+  requirements:
+    - SCCM PowerShell module (ConfigurationManager)
+    - Administrative access to SCCM site server
+    - WMI access to SCCM site database
+  options:
+    name:
+      description:
+        - The name of the application to query.
+        - If not specified, all applications are returned.
+      type: str
+      required: false
+  notes:
+    - This module requires the Microsoft Endpoint Configuration Manager Console to be installed on the target machine.
+    - The module uses Get-CMApplication cmdlet to gather application information.
+    - This is an info module that does not make any changes to the system.
+    - "B(Permissions): Requires administrative access to query MECM applications."
+  author:
+    - Ansible Ecosystem Engineering team (@ansible)
+    - Shahar Golshani (@shahargolshani)
+
+EXAMPLES: |
+  - name: Get all applications
+    microsoft.mecm.application_info:
+      site_code: "XYZ"
+    register: all_apps
+
+  - name: Get a specific application by name
+    microsoft.mecm.application_info:
+      site_code: "XYZ"
+      name: "My Application"
+    register: app_info
+
+  - name: Check if an application exists
+    microsoft.mecm.application_info:
+      site_code: "XYZ"
+      name: "My Application"
+    register: app_info
+
+  - name: Assert application exists
+    ansible.builtin.assert:
+      that:
+        - app_info.applications | length > 0
+      fail_msg: "Application 'My Application' was not found"
+
+RETURN:
+  applications:
+    description: List of application information.
+    returned: always
+    type: list
+    elements: dict
+    contains:
+      name:
+        description: The application display name.
+        type: str
+        returned: always
+        sample: "My Application"
+      id:
+        description: The CI_ID of the application.
+        type: str
+        returned: always
+        sample: "16777001"
+      description:
+        description: The localized description of the application.
+        type: str
+        returned: always
+        sample: "Enterprise application"
+      publisher:
+        description: The application publisher (manufacturer).
+        type: str
+        returned: always
+        sample: "RedHat"
+      software_version:
+        description: The application version string.
+        type: str
+        returned: always
+        sample: "1.0.0"
+      optional_reference:
+        description: An optional string to help find the application in the console.
+        type: str
+        returned: always
+        sample: "REF-001"
+      auto_install:
+        description: Whether the application can be installed from the Install Application task sequence step without being deployed.
+        type: str
+        returned: always
+        sample: "true"
+      owners:
+        description: List of administrative users responsible for this application.
+        type: list
+        elements: str
+        returned: always
+        sample: ["Administrator", "SuperUser"]
+      support_contacts:
+        description: List of administrative users that end users can contact for help.
+        type: list
+        elements: str
+        returned: always
+        sample: ["Administrator", "HelpDesk"]
+      localized_name:
+        description: The application name as it appears in Software Center.
+        type: str
+        returned: always
+        sample: "My Application"
+      localized_description:
+        description: The application description as it appears in Software Center.
+        type: str
+        returned: always
+        sample: "Enterprise application for all users"
+      user_documentation:
+        description: Location of a file or URL for additional application information.
+        type: str
+        returned: always
+        sample: "https://redhat.com/docs/app"
+      link_text:
+        description: Text shown in place of "Additional information" in Software Center.
+        type: str
+        returned: always
+        sample: "More info"
+      keyword:
+        description: Keywords to help Software Center users search for the application.
+        type: list
+        elements: str
+        returned: always
+        sample: ["ansible", "managed"]
+      privacy_url:
+        description: URL to the privacy statement for the application.
+        type: str
+        returned: always
+        sample: "https://redhat.com/privacy"
+      is_featured:
+        description: Whether the application is displayed as a featured app in the Company Portal.
+        type: bool
+        returned: always
+        sample: false
+      default_language_id:
+        description: The default Software Center language ID.
+        type: str
+        returned: always
+        sample: "en-US"
+      release_date:
+        description: The release date of the application.
+        type: str
+        returned: always
+        sample: "2025-01-15"
+      is_deployed:
+        description: Whether the application has active deployments.
+        type: bool
+        returned: always
+        sample: true
+      is_enabled:
+        description: Whether the application is enabled.
+        type: bool
+        returned: always
+        sample: true
+      is_expired:
+        description: Whether the application is expired.
+        type: bool
+        returned: always
+        sample: false
+      is_superseded:
+        description: Whether the application is superseded by a newer version.
+        type: bool
+        returned: always
+        sample: false
+      date_created:
+        description: The date the application was created.
+        type: str
+        returned: always
+        sample: "2025-01-15 10:30:00 -8"
+      date_last_modified:
+        description: The date the application was last modified.
+        type: str
+        returned: always
+        sample: "2025-01-20 14:00:00 -8"
+      created_by:
+        description: The user who created the application.
+        type: str
+        returned: always
+        sample: "Administrator"
+      number_of_deployments:
+        description: The number of deployments for this application.
+        type: int
+        returned: always
+        sample: 2
