@@ -18,9 +18,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Approve protected environment once instead of once per job in the matrix
+  approve:
+    name: Approve Integration
+    runs-on: ubuntu-latest
+    environment:
+      name: eco-mecm
+    steps:
+      - run: echo "Deployment approved"
+
   integration:
     runs-on: [self-hosted]
-    environment: eco-mecm
+    needs:
+      - approve
+    if: always() && needs.approve.result == 'success'
     name: I (Ⓐ${{ matrix.ansible }}
     strategy:
       fail-fast: false
