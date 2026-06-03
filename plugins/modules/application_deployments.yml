@@ -1,0 +1,196 @@
+---
+# Copyright: (c) 2025, Ansible Project
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+DOCUMENTATION:
+  module: application_deployments
+  short_description: Create, update, or delete an Application Deployment in MECM
+  description:
+    - Creates, updates, or removes a deployment of an application to a collection in MECM.
+    - A deployment is uniquely identified by the combination of C(name) (application) and C(collection_name).
+    - Idempotency is applied to C(available_date_time) and C(deadline_date_time).
+    - C(deploy_action) and C(deploy_purpose) are creation-only; they cannot be changed on an existing deployment.
+    - Uses C(New-CMApplicationDeployment), C(Set-CMApplicationDeployment), and
+      C(Remove-CMApplicationDeployment) cmdlets.
+    - The I(User Experience) settings of a deployment (e.g. user notifications, restart behavior,
+      software installation outside maintenance windows) are not supported in this development phase.
+    - The I(Alerts) settings of a deployment (e.g. SCOM alerts, compliance thresholds) are not
+      supported in this development phase.
+  version_added: "1.1.0"
+  extends_documentation_fragment:
+    - microsoft.mecm.uses_cm_ps_module
+  requirements:
+    - Microsoft Endpoint Configuration Manager PowerShell module (ConfigurationManager)
+    - Administrative access to Microsoft Endpoint Configuration Manager site server
+  options:
+    site_code:
+      description:
+        - The site code of the Configuration Manager site to connect to.
+      type: str
+      required: true
+    name:
+      description:
+        - The name of the application to deploy.
+      type: str
+      required: true
+    collection_name:
+      description:
+        - The name of the target collection for the deployment.
+        - Together with C(name), uniquely identifies the deployment.
+      type: str
+      required: true
+    available_date_time:
+      description:
+        - The date and time when the deployment becomes available to clients.
+        - Must be in the format C(MM/DD/YYYY HH:MM:SS), e.g. C(12/31/2026 08:00:00).
+        - Compared at minute precision for idempotency.
+        - Cannot be omitted when C(deadline_date_time) is provided.
+        - If both C(available_date_time) and C(deadline_date_time) are omitted, MECM sets
+          the availability time to the current date and time.
+      type: str
+      required: false
+    deadline_date_time:
+      description:
+        - The date and time of the deployment deadline.
+        - Must be in the format C(MM/DD/YYYY HH:MM:SS), e.g. C(12/31/2026 08:00:00).
+        - Requires C(available_date_time) to also be set; the module will fail if
+          C(deadline_date_time) is provided without C(available_date_time).
+        - Must not be earlier than C(available_date_time); the module will fail if the
+          deadline precedes the availability time.
+        - Not applicable when C(deploy_purpose=Available); the module will fail if this
+          parameter is set for an Available deployment.
+        - If omitted while C(available_date_time) is set, MECM sets the deadline to
+          the current date and time.
+        - If both C(available_date_time) and C(deadline_date_time) are omitted, MECM sets
+          the deadline to C(As soon as possible after the available time)
+          Where available time is the current date and time.
+      type: str
+      required: false
+    deploy_action:
+      description:
+        - The deployment action — whether to install or uninstall the application.
+        - B(Required when O(state=present).)
+        - This value is set at creation time only and cannot be changed on an existing deployment.
+        - When set to C(Uninstall), C(deploy_purpose) must be C(Required).
+      type: str
+      required: false
+      choices:
+        - Install
+        - Uninstall
+    deploy_purpose:
+      description:
+        - Whether the deployment is required (mandatory) or available (optional) for clients.
+        - B(Required when O(state=present).)
+        - This is a creation-only parameter; it cannot be changed on an existing deployment.
+        - C(Available) is only supported when C(deploy_action=Install).
+          C(deploy_action=Uninstall) requires C(deploy_purpose=Required).
+      type: str
+      required: false
+      choices:
+        - Available
+        - Required
+    distribute_content:
+      description:
+        - When C(true), distributes the application content as part of creating the deployment.
+        - Only used during deployment creation.
+        - If the content is already distributed to the specified C(distribution_point_group_name),
+          distribution is skipped automatically and a warning is emitted.
+      type: bool
+      required: false
+      default: false
+    distribution_point_group_name:
+      description:
+        - The name of the distribution point group to distribute content to.
+        - Cannot be changed on an existing deployment.
+        - Requires C(distribute_content=true); the module will fail if this parameter is set
+          without enabling C(distribute_content).
+        - The group must exist in MECM; the module will fail if the name does not match any
+          known distribution point group.
+      type: str
+      required: false
+    state:
+      description:
+        - Whether the deployment should be present or absent.
+      type: str
+      choices:
+        - present
+        - absent
+      default: present
+  author:
+    - "Ansible Project (@ansible)"
+
+EXAMPLES: |
+  - name: Deploy application as required to All Users
+    microsoft.mecm.application_deployments:
+      site_code: "ECO"
+      name: "application_name"
+      collection_name: "All Users"
+      deploy_action: Install
+      deploy_purpose: Required
+      available_date_time: "12/31/2026 08:00:00"
+      deadline_date_time: "12/31/2026 08:00:00"
+      state: present
+
+  - name: Deploy application and distribute content via DP group
+    microsoft.mecm.application_deployments:
+      site_code: "ECO"
+      name: "application_name"
+      collection_name: "All Users"
+      deploy_action: Install
+      deploy_purpose: Available
+      distribute_content: true
+      distribution_point_group_name: "primary"
+
+  - name: Update deployment deadline
+    microsoft.mecm.application_deployments:
+      site_code: "ECO"
+      name: "application_name"
+      collection_name: "All Users"
+      deploy_action: Install
+      deploy_purpose: Required
+      available_date_time: "12/31/2026 08:00:00"
+      deadline_date_time: "01/01/2027 08:00:00"
+
+  - name: Remove a deployment
+    microsoft.mecm.application_deployments:
+      site_code: "ECO"
+      name: "application_name"
+      collection_name: "All Users"
+      state: absent
+
+RETURN:
+  deployment:
+    description: State of the deployment after the operation.
+    returned: always
+    type: dict
+    contains:
+      name:
+        description: Application name.
+        type: str
+        returned: always
+        sample: "111111"
+      collection_name:
+        description: Target collection name.
+        type: str
+        returned: always
+        sample: "All Users"
+      deploy_purpose:
+        description: Whether the deployment is Required or Available.
+        type: str
+        returned: always
+        sample: "Required"
+      deploy_action:
+        description: Whether the deployment installs or uninstalls the application.
+        type: str
+        returned: always
+        sample: "Install"
+      available_date_time:
+        description: Date and time when the deployment became available.
+        type: str
+        returned: always
+        sample: "2020-01-01 00:00:00 +0"
+      deadline_date_time:
+        description: Deployment deadline date and time.
+        type: str
+        returned: always
+        sample: "2020-01-01 00:00:00 +0"
