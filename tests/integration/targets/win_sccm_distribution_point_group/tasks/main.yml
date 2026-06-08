@@ -341,7 +341,7 @@
       ansible.builtin.assert:
         that:
           - _rename_nonexistent is failed
-          - "'does not exist' in _rename_nonexistent.msg"
+          - "'no group exists with the original name' in _rename_nonexistent.msg"
 
     # -----------------------------------------------
     # Create a second group to ensure INFO all-groups returns multiple results

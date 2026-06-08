@@ -28,7 +28,7 @@ Test-CMSiteNameAndConnect -SiteCode $site_code -Module $module
 # Fetch group(s)
 if (-not [string]::IsNullOrEmpty($name)) {
     try {
-        $groups = @(Get-CMDistributionPointGroup -Name $name -ErrorAction SilentlyContinue)
+        $groups = @(Get-CMDistributionPointGroup -Name $name -ErrorAction Stop)
     }
     catch {
         $module.FailJson("Failed to query DP group '$name': $($_.Exception.Message)", $_)

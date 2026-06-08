@@ -82,7 +82,7 @@ if ($state -eq 'absent') {
 elseif ($state -eq 'present') {
     if ($null -eq $existing_group) {
         if (-not [string]::IsNullOrEmpty($new_name)) {
-            $module.FailJson("Cannot rename DP group: '$name' does not exist.")
+            $module.FailJson("Cannot rename DP group to '$new_name' because no group exists with the original name '$name'.")
         }
 
         # --- Create new group ---
@@ -105,7 +105,7 @@ elseif ($state -eq 'present') {
                         -DistributionPointGroupName $name -ErrorAction Stop
                 }
                 catch {
-                    $module.Warn("Failed to add DP '$dp' to group '$name': $($_.Exception.Message)")
+                    $module.FailJson("Failed to add DP '$dp' to group '$name': $($_.Exception.Message)", $_)
                 }
             }
             $new_group = Get-CMDistributionPointGroup -Name $name -ErrorAction SilentlyContinue
@@ -168,7 +168,7 @@ elseif ($state -eq 'present') {
                                 -DistributionPointGroupName $current_name -ErrorAction Stop
                         }
                         catch {
-                            $module.Warn("Failed to add DP '$dp' to group '$current_name': $($_.Exception.Message)")
+                            $module.FailJson("Failed to add DP '$dp' to group '$current_name': $($_.Exception.Message)", $_)
                         }
                     }
                     foreach ($dp in $to_remove) {
@@ -177,7 +177,7 @@ elseif ($state -eq 'present') {
                                 -DistributionPointGroupName $current_name -Force -Confirm:$false -ErrorAction Stop
                         }
                         catch {
-                            $module.Warn("Failed to remove DP '$dp' from group '$current_name': $($_.Exception.Message)")
+                            $module.FailJson("Failed to remove DP '$dp' from group '$current_name': $($_.Exception.Message)", $_)
                         }
                     }
                 }
