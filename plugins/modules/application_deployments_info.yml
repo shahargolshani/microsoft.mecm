@@ -1,0 +1,114 @@
+---
+# Copyright: (c) 2025, Ansible Project
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+DOCUMENTATION:
+  module: application_deployments_info
+  short_description: Retrieve Application Deployment information from MECM
+  description:
+    - Returns deployment information for one or all application deployments in a Configuration Manager site.
+    - When C(name) and C(collection_name) are both provided, returns the single deployment for that
+      application and collection combination.
+    - When only C(name) is provided, returns all deployments for that application across all collections.
+    - When C(name) is omitted, returns all application deployments site-wide.
+    - C(collection_name) cannot be used without C(name).
+    - A warning is emitted if the specified filters match no deployments.
+    - Uses C(Get-CMApplicationDeployment).
+  version_added: "1.2.0"
+  extends_documentation_fragment:
+    - microsoft.mecm.uses_cm_ps_module
+  requirements:
+    - Microsoft Endpoint Configuration Manager PowerShell module (ConfigurationManager)
+    - Administrative access to Microsoft Endpoint Configuration Manager site server
+  options:
+    site_code:
+      description:
+        - The site code of the Configuration Manager site to connect to.
+      type: str
+      required: true
+    name:
+      description:
+        - Filter results to deployments for this application name.
+        - When omitted, all application deployments in the site are returned.
+        - A warning is emitted if the application has no deployments.
+      type: str
+      required: false
+    collection_name:
+      description:
+        - Further filter results to the deployment targeting this specific collection.
+        - Requires C(name) to also be provided; the module will fail if C(collection_name)
+          is specified without C(name).
+        - When omitted, all deployments for the application (across all collections) are returned.
+        - A warning is emitted if no deployment exists for the given application and collection.
+      type: str
+      required: false
+  author:
+    - "Ansible Project (@ansible)"
+
+EXAMPLES: |
+  - name: Get all application deployments site-wide
+    microsoft.mecm.application_deployments_info:
+      site_code: "ECO"
+    register: all_deployments
+
+  - name: Get all deployments for a specific application
+    microsoft.mecm.application_deployments_info:
+      site_code: "ECO"
+      name: "111111"
+    register: app_deployments
+
+  - name: Get the deployment for a specific application and collection
+    microsoft.mecm.application_deployments_info:
+      site_code: "ECO"
+      name: "111111"
+      collection_name: "All Users"
+    register: specific_deployment
+
+  - name: Check that the application is deployed as Required
+    ansible.builtin.assert:
+      that:
+        - app_deployments.deployments | selectattr('deploy_purpose', 'equalto', 'Required') | list | length > 0
+
+RETURN:
+  deployments:
+    description: List of application deployments.
+    returned: always
+    type: list
+    elements: dict
+    contains:
+      name:
+        description: Application name.
+        type: str
+        returned: always
+        sample: "111111"
+      collection_name:
+        description: Target collection name.
+        type: str
+        returned: always
+        sample: "All Users"
+      deploy_purpose:
+        description: Whether the deployment is Required or Available.
+        type: str
+        returned: always
+        sample: "Required"
+      deploy_action:
+        description: Whether the deployment installs or uninstalls the application.
+        type: str
+        returned: always
+        sample: "Install"
+      available_date_time:
+        description:
+          - Date and time when the deployment became available.
+          - Returned in the format C(YYYY-MM-DD HH:MM:SS <offset>).
+          - Input to the management module must use C(MM/DD/YYYY HH:MM:SS).
+        type: str
+        returned: always
+        sample: "2025-01-31 08:00:00 -8"
+      deadline_date_time:
+        description:
+          - Deployment deadline date and time.
+          - Returned in the format C(YYYY-MM-DD HH:MM:SS <offset>).
+          - Input to the management module must use C(MM/DD/YYYY HH:MM:SS).
+        type: str
+        returned: always
+        sample: "2025-01-31 08:00:00 -8"
