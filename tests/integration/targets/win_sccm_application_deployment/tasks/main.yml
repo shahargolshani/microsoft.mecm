@@ -1,0 +1,348 @@
+---
+# Integration tests for application_deployments and application_deployments_info modules
+
+# ===========================================================
+# PRE-TEST CLEANUP - ensure a clean state before starting
+# ===========================================================
+- name: Pre-test cleanup - remove deployment if it already exists
+  microsoft.mecm.application_deployments:
+    site_code: "{{ test_site_code }}"
+    name: "{{ test_app_name }}"
+    collection_name: "{{ test_collection_name }}"
+    state: absent
+  ignore_errors: true
+
+- name: Pre-test verification - confirm no deployment exists
+  microsoft.mecm.application_deployments_info:
+    site_code: "{{ test_site_code }}"
+    name: "{{ test_app_name }}"
+    collection_name: "{{ test_collection_name }}"
+  register: _pre_test_info
+
+- name: Assert no deployment exists before tests begin
+  ansible.builtin.assert:
+    that:
+      - _pre_test_info.deployments | length == 0
+    fail_msg: >-
+      A deployment for '{{ test_app_name }}' already exists
+      and could not be removed. Clean it up manually before running the tests.
+
+- name: Test application deployment lifecycle
+  block:
+
+    # ===========================================================
+    # VALIDATION - deploy_action Uninstall with deploy_purpose Available
+    # should fail with a clear error
+    # ===========================================================
+    - name: Fail when deploy_action is Uninstall and deploy_purpose is Available
+      microsoft.mecm.application_deployments:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+        deploy_action: Uninstall
+        deploy_purpose: Available
+        state: present
+      register: _invalid_action_purpose
+      ignore_errors: true
+
+    - name: Assert error is returned for Uninstall with Available
+      ansible.builtin.assert:
+        that:
+          - _invalid_action_purpose is failed
+          - _invalid_action_purpose.msg is search("deploy_purpose must be 'Required' when deploy_action is 'Uninstall'")
+
+    # ===========================================================
+    # VALIDATION - deadline_date_time without available_date_time
+    # should fail with a clear error
+    # ===========================================================
+    - name: Fail when deadline_date_time is used without available_date_time
+      microsoft.mecm.application_deployments:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+        deploy_action: Install
+        deploy_purpose: Required
+        deadline_date_time: "01/01/2025 08:00:00"
+        state: present
+      register: _deadline_without_available
+      ignore_errors: true
+
+    - name: Assert error is returned for deadline without available
+      ansible.builtin.assert:
+        that:
+          - _deadline_without_available is failed
+          - _deadline_without_available.msg is search("cannot be used without available_date_time")
+
+    # ===========================================================
+    # VALIDATION - deadline_date_time before available_date_time
+    # should fail with a clear error
+    # ===========================================================
+    - name: Fail when deadline_date_time is before available_date_time
+      microsoft.mecm.application_deployments:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+        deploy_action: Install
+        deploy_purpose: Required
+        available_date_time: "12/31/2030 00:00:00"
+        deadline_date_time: "01/01/2020 00:00:00"
+        state: present
+      register: _invalid_dates
+      ignore_errors: true
+
+    - name: Assert error is returned for deadline before available
+      ansible.builtin.assert:
+        that:
+          - _invalid_dates is failed
+          - _invalid_dates.msg is search("must not be before")
+
+    # ===========================================================
+    # CREATE - check mode
+    # ===========================================================
+    - name: Create deployment - check mode
+      microsoft.mecm.application_deployments:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+        deploy_action: Install
+        deploy_purpose: Required
+        available_date_time: "{{ test_available_dt }}"
+        deadline_date_time: "{{ test_deadline_dt }}"
+        state: present
+      check_mode: true
+      register: _create_check
+
+    - name: Get deployment info after check mode create
+      microsoft.mecm.application_deployments_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+      register: _info_after_create_check
+
+    - name: Assert check mode create did not apply
+      ansible.builtin.assert:
+        that:
+          - _create_check is changed
+          - _info_after_create_check.deployments | length == 0
+
+    # ===========================================================
+    # CREATE - actual
+    # ===========================================================
+    - name: Create deployment
+      microsoft.mecm.application_deployments: &create_deployment
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+        deploy_action: Install
+        deploy_purpose: Required
+        available_date_time: "{{ test_available_dt }}"
+        deadline_date_time: "{{ test_deadline_dt }}"
+        state: present
+      register: _create
+
+    # ===========================================================
+    # CREATE - idempotency
+    # ===========================================================
+    - name: Create deployment - idempotency
+      microsoft.mecm.application_deployments: *create_deployment
+      register: _create_idempotent
+
+    - name: Get deployment info after creation
+      microsoft.mecm.application_deployments_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+      register: _info_after_create
+
+    - name: Assert create, idempotency and info values
+      ansible.builtin.assert:
+        that:
+          - _create is changed
+          - _create_idempotent is not changed
+          - _info_after_create.deployments | length == 1
+          - _info_after_create.deployments[0].name == test_app_name
+          - _info_after_create.deployments[0].collection_name == test_collection_name
+          - _info_after_create.deployments[0].deploy_action == "Install"
+          - _info_after_create.deployments[0].deploy_purpose == "Required"
+
+    # ===========================================================
+    # CREATION-ONLY PARAMS WARNING - deploy_purpose and deploy_action
+    # on an existing deployment should emit a warning and be ignored
+    # ===========================================================
+    - name: Run with deploy_purpose and deploy_action on existing deployment
+      microsoft.mecm.application_deployments:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+        deploy_action: Uninstall
+        deploy_purpose: Required
+        state: present
+      register: _creation_only_warning
+
+    - name: Assert creation-only warning is emitted and deployment is unchanged
+      ansible.builtin.assert:
+        that:
+          - _creation_only_warning is not changed
+          - _creation_only_warning.warnings | length > 0
+          - _creation_only_warning.warnings | select('search', 'creation-only') | list | length > 0
+
+    - name: Get deployment info after creation-only params run
+      microsoft.mecm.application_deployments_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+      register: _info_after_creation_only
+
+    - name: Assert deploy_action and deploy_purpose were not changed
+      ansible.builtin.assert:
+        that:
+          - _info_after_creation_only.deployments[0].deploy_action == "Install"
+          - _info_after_creation_only.deployments[0].deploy_purpose == "Required"
+
+    # ===========================================================
+    # UPDATE - change available_date_time and deadline_date_time
+    # check mode
+    # ===========================================================
+    - name: Update deployment dates - check mode
+      microsoft.mecm.application_deployments:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+        deploy_action: Uninstall
+        deploy_purpose: Required
+        available_date_time: "{{ test_available_dt_updated }}"
+        deadline_date_time: "{{ test_deadline_dt_updated }}"
+        state: present
+      check_mode: true
+      register: _update_check
+
+    - name: Get deployment info after check mode update
+      microsoft.mecm.application_deployments_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+      register: _info_after_update_check
+
+    - name: Assert check mode update did not apply
+      ansible.builtin.assert:
+        that:
+          - _update_check is changed
+          - _info_after_update_check.deployments[0].available_date_time is search("2021")
+
+    # ===========================================================
+    # UPDATE - actual
+    # ===========================================================
+    - name: Update deployment dates
+      microsoft.mecm.application_deployments: &update_deployment
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+        deploy_action: Uninstall
+        deploy_purpose: Required
+        available_date_time: "{{ test_available_dt_updated }}"
+        deadline_date_time: "{{ test_deadline_dt_updated }}"
+        state: present
+      register: _update
+
+    # ===========================================================
+    # UPDATE - idempotency
+    # ===========================================================
+    - name: Update deployment dates - idempotency
+      microsoft.mecm.application_deployments: *update_deployment
+      register: _update_idempotent
+
+    - name: Get deployment info after update
+      microsoft.mecm.application_deployments_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+      register: _info_after_update
+
+    - name: Assert update, idempotency and updated date values
+      ansible.builtin.assert:
+        that:
+          - _update is changed
+          - _update_idempotent is not changed
+          - _info_after_update.deployments | length == 1
+          - _info_after_update.deployments[0].available_date_time is search("2025")
+          - _info_after_update.deployments[0].deadline_date_time is search("2025")
+
+    # ===========================================================
+    # INFO - query all deployments site-wide (no name filter)
+    # ===========================================================
+    - name: Get all deployments site-wide
+      microsoft.mecm.application_deployments_info:
+        site_code: "{{ test_site_code }}"
+      register: _info_all
+
+    - name: Assert site-wide info returns at least the test deployment
+      ansible.builtin.assert:
+        that:
+          - _info_all.deployments | length >= 1
+          - _info_all.deployments | selectattr('name', 'equalto', test_app_name) | list | length >= 1
+
+    # ===========================================================
+    # DELETE - check mode
+    # ===========================================================
+    - name: Delete deployment - check mode
+      microsoft.mecm.application_deployments:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+        state: absent
+      check_mode: true
+      register: _delete_check
+
+    - name: Get deployment info after check mode delete
+      microsoft.mecm.application_deployments_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+      register: _info_after_delete_check
+
+    - name: Assert check mode delete did not remove
+      ansible.builtin.assert:
+        that:
+          - _delete_check is changed
+          - _info_after_delete_check.deployments | length == 1
+
+    # ===========================================================
+    # DELETE - actual
+    # ===========================================================
+    - name: Delete deployment
+      microsoft.mecm.application_deployments: &delete_deployment
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+        state: absent
+      register: _delete
+
+    # ===========================================================
+    # DELETE - idempotency
+    # ===========================================================
+    - name: Delete deployment - idempotency
+      microsoft.mecm.application_deployments: *delete_deployment
+      register: _delete_idempotent
+
+    - name: Get deployment info after deletion
+      microsoft.mecm.application_deployments_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+      register: _info_after_delete
+
+    - name: Assert delete, idempotency and deployment is gone
+      ansible.builtin.assert:
+        that:
+          - _delete is changed
+          - _delete_idempotent is not changed
+          - _info_after_delete.deployments | length == 0
+
+  always:
+    - name: Cleanup - ensure test deployment is removed
+      microsoft.mecm.application_deployments:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_app_name }}"
+        collection_name: "{{ test_collection_name }}"
+        state: absent
+      ignore_errors: true
