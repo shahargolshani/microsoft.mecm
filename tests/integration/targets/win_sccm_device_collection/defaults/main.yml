@@ -1,0 +1,16 @@
+---
+test_site_code: "ECO"
+test_limiting_collection: "All Systems"
+test_schedule_start: "2026-01-01 06:00"
+
+# Query rule variables
+test_query_rule_name: "Active Systems"
+test_query_expression: >-
+  select SMS_R_System.ResourceId from SMS_R_System
+  where SMS_R_System.Active = 1
+test_query_expression_updated: >-
+  select SMS_R_System.ResourceId from SMS_R_System
+  where SMS_R_System.Active = 1 and SMS_R_System.Client = 1
+
+# Direct rule variable - must be the ResourceID of an existing device in the test MECM site
+test_direct_resource_id: 16777219
