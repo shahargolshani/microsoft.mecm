@@ -4,15 +4,14 @@
 
 DOCUMENTATION:
   module: boundaries
-  short_description: Create, rename, or delete site boundaries in Microsoft Endpoint Configuration Manager (MECM)
+  short_description: Create or delete site boundaries in Microsoft Endpoint Configuration Manager (MECM)
   description:
-    - This module creates, renames, or deletes site boundaries in a Configuration Manager site.
-    - Uses the V(New-CMBoundary), V(Set-CMBoundary), and V(Remove-CMBoundary) PowerShell cmdlets.
+    - This module creates or deletes site boundaries in a Configuration Manager site.
+    - Uses the V(New-CMBoundary) and V(Remove-CMBoundary) PowerShell cmdlets.
     - The unique identifier of a boundary is the combination of O(type) and O(value).
       There can be multiple boundaries with the same O(name), but not with the same O(type) and O(value).
-    - O(name), O(type), and O(value) are the lookup key used to find an existing boundary.
-    - O(new_name) is the only field that can be updated on an existing boundary.
-      To change O(type) or O(value), remove the old boundary with O(state=absent) and create a new one.
+    - O(type) and O(value) are the lookup key used to find an existing boundary.
+    - To change O(type) or O(value), remove the old boundary with O(state=absent) and create a new one.
     - For more information, see
       U(https://learn.microsoft.com/en-us/powershell/module/configurationmanager/new-cmboundary).
   version_added: "1.2.0"
@@ -30,12 +29,10 @@ DOCUMENTATION:
       required: true
     name:
       description:
-        - The display name (V(DisplayName)) of the boundary used as part of the lookup key.
-        - Optional for both O(state=present) and O(state=absent).
-        - When omitted the lookup is performed by O(type) and O(value) only, matching any boundary
-          regardless of its display name.
-        - When provided it is included in the lookup; if no boundary matches the combination of
-          O(name) + O(type) + O(value) the module is a no-op (C(changed=false)).
+        - The optional display name (V(DisplayName)) to assign to the boundary when creating it.
+        - When omitted, the boundary is created without a display name.
+        - O(name) is not used as part of the lookup; the boundary is always located by O(type) and O(value).
+        - For O(state=absent), O(name) is ignored; the boundary is removed based on O(type) and O(value) alone.
       type: str
       required: false
       default: ''
@@ -75,24 +72,15 @@ DOCUMENTATION:
         - The module validates the value format when O(type=Vpn) and fails immediately if it does not match.
       type: str
       required: true
-    new_name:
-      description:
-        - New display name to assign to the boundary when it already exists.
-        - When provided and different from the current V(DisplayName), V(Set-CMBoundary -NewName) is called.
-        - Ignored when the boundary does not exist (creation always uses O(name) as the display name).
-        - When omitted or empty the display name is left unchanged.
-      type: str
-      required: false
-      default: ''
     state:
       description:
         - Whether the boundary should exist or be removed.
-        - V(present) creates the boundary if it does not exist.
-          If it exists, renames it when O(new_name) is provided and differs from the current name.
-        - V(absent) removes the boundary when found by the lookup key O(type) + O(value) + O(name).
-          O(name) is not required for removal — when omitted the boundary is located by O(type) and O(value) alone.
-          When O(name) is provided it is included in the lookup; if no boundary matches all three criteria
-          the module is a no-op and reports C(changed=false).
+        - V(present) creates the boundary if it does not exist (looked up by O(type) and O(value)).
+          If a boundary with the same O(type) and O(value) already exists, the module is a no-op and
+          reports C(changed=false) regardless of the display name.
+        - V(absent) removes the boundary when found by O(type) and O(value).
+          O(name) is ignored for removal — the boundary is located by O(type) and O(value) alone.
+          When no boundary matches, the module is a no-op and reports C(changed=false).
       type: str
       choices:
         - present
@@ -103,17 +91,12 @@ DOCUMENTATION:
     - To change the O(type) or O(value) of an existing boundary, remove it with O(state=absent) first and
       then recreate it with the new O(type) and O(value).
     - This module supports idempotency and check mode (V(-WhatIf)).
-    - "B(Permissions): Requires administrative access to create, update, and delete MECM boundaries."
+    - "B(Permissions): Requires administrative access to create and delete MECM boundaries."
   author:
     - Ansible Ecosystem Engineering team (@ansible)
     - Shahar Golshani (@shahargolshani)
 
 EXAMPLES: |
-  - name: Create the PS drive for the site
-    microsoft.mecm.site_ps_drive:
-      site_code: XYZ
-      state: present
-
   - name: Create an IP subnet boundary (subnet ID only, not CIDR notation)
     microsoft.mecm.boundaries:
       site_code: "XYZ"
@@ -154,52 +137,32 @@ EXAMPLES: |
       value: "Auto:On"
       state: present
 
-  - name: Create a VPN boundary - match by connection name
+  - name: Create a boundary without a display name
     microsoft.mecm.boundaries:
       site_code: "XYZ"
-      name: "Corp VPN"
-      type: Vpn
-      value: "Name:CorpVPN"
-      state: present
-
-  - name: Create a VPN boundary - match by connection description
-    microsoft.mecm.boundaries:
-      site_code: "XYZ"
-      name: "Corp VPN Desc"
-      type: Vpn
-      value: "Description:Corporate VPN"
-      state: present
-
-  - name: Rename an existing boundary (idempotent)
-    microsoft.mecm.boundaries:
-      site_code: "XYZ"
-      name: "Corporate LAN"
       type: IPSubnet
-      value: "192.168.1.0"
-      new_name: "Corporate LAN - Primary"
+      value: "192.168.2.0"
       state: present
 
   - name: Check mode - preview removal without making changes
     microsoft.mecm.boundaries:
       site_code: "XYZ"
-      name: "Corporate LAN"
       type: IPSubnet
       value: "192.168.1.0"
       state: absent
     check_mode: true
 
-  - name: Remove a boundary
+  - name: Remove a boundary by type and value
     microsoft.mecm.boundaries:
       site_code: "XYZ"
-      name: "Corporate LAN"
       type: IPSubnet
       value: "192.168.1.0"
       state: absent
 
 RETURN:
   boundary:
-    description: Details of the boundary that was created, renamed, or removed.
-    returned: on success (not returned in check mode for create/rename)
+    description: Details of the boundary that was created or removed.
+    returned: on success (not returned in check mode for create)
     type: dict
     sample: |-
       {

@@ -38,11 +38,11 @@ DOCUMENTATION:
         - Optional boundary type filter.
         - When provided, only boundaries of this type are returned.
         - When omitted, all boundaries are returned regardless of type.
-        - V(IPSubnet) – IP subnet boundaries.
-        - V(ADSite) – Active Directory site boundaries.
-        - V(IPV6Prefix) – IPv6 prefix boundaries.
-        - V(IPRange) – IP address range boundaries.
-        - V(Vpn) – VPN boundaries.
+        - V(IPSubnet) - IP subnet boundaries.
+        - V(ADSite) - Active Directory site boundaries.
+        - V(IPV6Prefix) - IPv6 prefix boundaries.
+        - V(IPRange) - IP address range boundaries.
+        - V(Vpn) - VPN boundaries.
       type: str
       required: false
       choices:
@@ -61,11 +61,6 @@ DOCUMENTATION:
     - Shahar Golshani (@shahargolshani)
 
 EXAMPLES: |
-  - name: Create the PS drive for the site
-    microsoft.mecm.site_ps_drive:
-      site_code: XYZ
-      state: present
-
   - name: Retrieve all boundaries in the site
     microsoft.mecm.boundaries_info:
       site_code: "XYZ"
