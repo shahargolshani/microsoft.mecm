@@ -1,0 +1,94 @@
+---
+# Copyright: (c) 2025, Ansible Project
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+DOCUMENTATION:
+  module: client_settings_info
+  short_description: Retrieve information about client settings in Microsoft Endpoint Configuration Manager (MECM)
+  description:
+    - This module retrieves information about one or more client settings from a Configuration Manager site.
+    - Uses the V(Get-CMClientSetting) PowerShell cmdlet.
+    - When O(name) is not specified, all client settings defined in the site are returned.
+    - When O(name) is specified, only the client setting with that exact name is returned.
+    - For more information, see
+      U(https://learn.microsoft.com/en-us/powershell/module/configurationmanager/get-cmclientsetting).
+  version_added: "1.1.0"
+  extends_documentation_fragment:
+    - microsoft.mecm.uses_cm_ps_module
+  requirements:
+    - Microsoft Endpoint Configuration Manager PowerShell module (ConfigurationManager)
+    - Administrative access to Microsoft Endpoint Configuration Manager site server
+  options:
+    site_code:
+      description:
+        - The site code of the Configuration Manager site to connect to.
+        - This determines which CM site drive to use and is required for connecting to the correct domain.
+      type: str
+      required: true
+    name:
+      description:
+        - Optional client setting name filter.
+        - When provided, only the client setting with this exact name is returned.
+        - When omitted, all client settings are returned.
+      type: str
+      required: false
+  notes:
+    - This module requires the Microsoft Endpoint Configuration Manager Console to be installed on the target machine.
+    - This is a read-only module; it never modifies the site configuration.
+    - "B(Permissions): Requires read access to MECM client settings."
+  author:
+    - Ansible Ecosystem Engineering team (@ansible)
+    - Shahar Golshani (@shahargolshani)
+
+EXAMPLES: |
+  - name: Retrieve all client settings in the site
+    microsoft.mecm.client_settings_info:
+      site_code: "XYZ"
+    register: all_client_settings
+
+  - name: Retrieve a specific client setting by name
+    microsoft.mecm.client_settings_info:
+      site_code: "XYZ"
+      name: "Custom Device Settings"
+    register: device_settings
+
+  - name: Print all client setting names, types, and priorities
+    ansible.builtin.debug:
+      msg: "{{ item.name }} (type: {{ item.type }}, priority: {{ item.priority }})"
+    loop: "{{ all_client_settings.client_settings }}"
+
+  - name: Show only device-type settings using a filter on the result
+    ansible.builtin.debug:
+      msg: "{{ item.name }}"
+    loop: "{{ all_client_settings.client_settings | selectattr('type', 'equalto', 'Device') | list }}"
+
+RETURN:
+  client_settings:
+    description: List of client settings found in the MECM site, optionally filtered by name.
+    returned: always
+    type: list
+    elements: dict
+    sample: |-
+      [
+        {
+          "name": "Default Client Settings",
+          "description": "",
+          "type": "default",
+          "priority": 0,
+          "settings_id": "16777216"
+        },
+        {
+          "name": "Custom Device Settings",
+          "description": "Custom device settings managed by Ansible",
+          "type": "device",
+          "priority": 10,
+          "settings_id": "16777217"
+        },
+        {
+          "name": "Custom User Settings",
+          "description": "Custom user settings managed by Ansible",
+          "type": "user",
+          "priority": 20,
+          "settings_id": "16777218"
+        }
+      ]
