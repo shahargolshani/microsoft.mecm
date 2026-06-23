@@ -1,0 +1,180 @@
+---
+# Copyright: (c) 2025, Ansible Project
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+DOCUMENTATION:
+  module: maintenance_windows
+  short_description: Create, update, or delete a Maintenance Window on a Device Collection in MECM
+  description:
+    - Creates, updates, or removes a Maintenance Window on a Device Collection in a Configuration Manager site.
+    - The target Device Collection must already exist; the module fails if it does not.
+    - A recurring weekly schedule is built with C(New-CMSchedule) using the schedule parameters.
+    - For idempotency the module decodes the stored schedule token with C(Convert-CMSchedule) and compares
+      it field-by-field against the requested values, along with the C(apply_to) type.
+    - Uses C(New-CMMaintenanceWindow), C(Set-CMMaintenanceWindow), C(Remove-CMMaintenanceWindow),
+      C(Get-CMMaintenanceWindow), C(New-CMSchedule), and C(Convert-CMSchedule) cmdlets.
+  version_added: "1.1.0"
+  extends_documentation_fragment:
+    - microsoft.mecm.uses_cm_ps_module
+  options:
+    device_collection_name:
+      description:
+        - Name of the Device Collection on which to manage the Maintenance Window.
+        - The collection must already exist; the module fails with an error if it does not.
+      type: str
+      required: true
+    name:
+      description:
+        - Name of the Maintenance Window to create, update, or remove.
+        - Used as the lookup key for idempotency.
+      type: str
+      required: true
+    state:
+      description:
+        - Whether the Maintenance Window should exist or be removed.
+        - V(present) creates or updates the window to match the requested parameters.
+        - V(absent) removes the window if it exists; no-op when it does not.
+      type: str
+      choices:
+        - present
+        - absent
+      default: present
+    apply_to:
+      description:
+        - Controls which deployments are allowed to run during the Maintenance Window.
+        - V(Any) - all deployments.
+        - V(SoftwareUpdatesOnly) - only software updates.
+        - V(TaskSequencesOnly) - only task sequences.
+      type: str
+      choices:
+        - Any
+        - SoftwareUpdatesOnly
+        - TaskSequencesOnly
+      default: Any
+    sched_recur_type:
+      description:
+        - Recurrence pattern for the schedule.
+        - V(None) - the window runs once; no extra recurrence parameters needed.
+        - V(Daily) - the window repeats every O(sched_recur_count) days.
+      type: str
+      choices:
+        - None
+        - Daily
+      default: None
+      required: false
+    sched_duration_count:
+      description:
+        - Length of the window expressed in units of O(sched_duration_interval).
+        - Required when O(state=present).
+      type: int
+      required: false
+    sched_duration_interval:
+      description:
+        - Unit of time for O(sched_duration_count).
+        - Required when O(state=present).
+      type: str
+      choices:
+        - Minutes
+        - Hours
+        - Days
+      required: false
+    sched_recur_count:
+      description:
+        - How many days between recurrences when O(sched_recur_type=Daily).
+        - Accepted range is 1-31.
+        - Required when O(sched_recur_type=Daily); ignored otherwise.
+      type: int
+      required: false
+    sched_start:
+      description:
+        - Start date and time of the first occurrence of the window.
+        - Accepts any date/time string parseable by .NET C([datetime]::Parse()).
+        - Example C(01/01/2024 02:00:00).
+        - Required when O(state=present).
+      type: str
+      required: false
+  notes:
+    - Supports check mode.
+    - "B(Permissions): Requires administrative access to create and manage MECM Maintenance Windows."
+  author:
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
+
+EXAMPLES: |
+  - name: Create a one-time (non-recurring) maintenance window
+    microsoft.mecm.maintenance_windows:
+      site_code: "ECO"
+      device_collection_name: "All Workstations"
+      name: "One-time Emergency Window"
+      apply_to: Any
+      sched_recur_type: None
+      sched_duration_count: 2
+      sched_duration_interval: Hours
+      sched_start: "01/15/2024 22:00:00"
+      state: present
+
+  - name: Create a daily recurring software-updates-only maintenance window
+    microsoft.mecm.maintenance_windows:
+      site_code: "ECO"
+      device_collection_name: "Servers - Tier 1"
+      name: "Daily SU Window"
+      apply_to: SoftwareUpdatesOnly
+      sched_recur_type: Daily
+      sched_recur_count: 1
+      sched_duration_count: 4
+      sched_duration_interval: Hours
+      sched_start: "01/01/2024 02:00:00"
+      state: present
+
+  - name: Preview removal without making changes (check mode)
+    microsoft.mecm.maintenance_windows:
+      site_code: "ECO"
+      device_collection_name: "All Workstations"
+      name: "Friday Night Patching"
+      state: absent
+    check_mode: true
+
+  - name: Remove a maintenance window
+    microsoft.mecm.maintenance_windows:
+      site_code: "ECO"
+      device_collection_name: "All Workstations"
+      name: "Friday Night Patching"
+      state: absent
+
+RETURN:
+  maintenance_window:
+    description: State of the Maintenance Window after the operation.
+    returned: always
+    type: dict
+    contains:
+      name:
+        description: Name of the Maintenance Window.
+        type: str
+        returned: always
+        sample: "Friday Night Patching"
+      service_window_id:
+        description: Unique ID of the Maintenance Window as reported by MECM.
+        type: str
+        returned: when not in check mode and the window exists
+        sample: "1"
+      is_enabled:
+        description: Whether the Maintenance Window is currently enabled.
+        type: bool
+        returned: always
+        sample: true
+      apply_to:
+        description: >
+          Deployment types allowed during this window.
+          One of C(Any), C(SoftwareUpdatesOnly), or C(TaskSequencesOnly).
+        type: str
+        returned: always
+        sample: "Any"
+      duration:
+        description: Duration of the window in minutes as stored by MECM.
+        type: int
+        returned: when not in check mode
+        sample: 120
+      service_window_schedules:
+        description: Raw MECM schedule token string for the window.
+        type: str
+        returned: when not in check mode
+        sample: "02C159C0381A8000"

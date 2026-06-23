@@ -1,0 +1,89 @@
+---
+# Copyright: (c) 2025, Ansible Project
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+DOCUMENTATION:
+  module: maintenance_windows_info
+  short_description: Retrieve Maintenance Window information for a Device Collection in MECM
+  description:
+    - Returns information about all Maintenance Windows on a Device Collection,
+      or a single window when O(name) is provided.
+    - The target Device Collection must already exist; the module fails if it does not.
+    - A warning is emitted when O(name) is specified but no matching window is found.
+  version_added: "1.1.0"
+  extends_documentation_fragment:
+    - microsoft.mecm.uses_cm_ps_module
+  options:
+    device_collection_name:
+      description:
+        - Name of the Device Collection whose Maintenance Windows are to be retrieved.
+        - The collection must already exist; the module fails with an error if it does not.
+      type: str
+      required: true
+    name:
+      description:
+        - Name of a specific Maintenance Window to retrieve.
+        - When omitted, all Maintenance Windows for the collection are returned.
+        - A warning is emitted if the specified window does not exist.
+      type: str
+      required: false
+  author:
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
+
+EXAMPLES: |
+  - name: Get all maintenance windows for a device collection
+    microsoft.mecm.maintenance_windows_info:
+      site_code: "ECO"
+      device_collection_name: "All Workstations"
+    register: all_windows
+
+  - name: Get a specific maintenance window by name
+    microsoft.mecm.maintenance_windows_info:
+      site_code: "ECO"
+      device_collection_name: "All Workstations"
+      name: "Friday Night Patching"
+    register: window_info
+
+  - name: Show apply_to type of the first maintenance window
+    ansible.builtin.debug:
+      msg: "{{ all_windows.maintenance_windows[0].apply_to }}"
+
+RETURN:
+  maintenance_windows:
+    description: List of Maintenance Windows found on the Device Collection.
+    returned: always
+    type: list
+    elements: dict
+    contains:
+      name:
+        description: Name of the Maintenance Window.
+        type: str
+        returned: always
+        sample: "Friday Night Patching"
+      service_window_id:
+        description: Unique ID of the Maintenance Window as reported by MECM.
+        type: str
+        returned: always
+        sample: "1"
+      is_enabled:
+        description: Whether the Maintenance Window is currently enabled.
+        type: bool
+        returned: always
+        sample: true
+      apply_to:
+        description: >
+          Deployment types allowed during this window.
+          One of C(Any), C(SoftwareUpdatesOnly), or C(TaskSequencesOnly).
+        type: str
+        returned: always
+        sample: "Any"
+      duration:
+        description: Duration of the window in minutes as stored by MECM.
+        type: int
+        returned: always
+        sample: 120
+      service_window_schedules:
+        description: Raw MECM schedule token string for the window.
+        type: str
+        returned: always
+        sample: "02C159C0381A8000"

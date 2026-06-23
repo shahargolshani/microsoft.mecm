@@ -1,0 +1,4 @@
+---
+test_site_code: "ECO"
+# "All Systems" is a built-in MECM collection present in every installation.
+test_collection_name: "All Systems"
