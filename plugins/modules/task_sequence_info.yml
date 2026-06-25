@@ -1,0 +1,71 @@
+---
+# Copyright: (c) 2025, Ansible Project
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+DOCUMENTATION:
+  module: task_sequence_info
+  short_description: Retrieve information about Task Sequences in MECM
+  description:
+    - Returns information about one or all Task Sequences in a Configuration Manager site.
+    - When C(name) is provided, only the task sequence(s) matching that name are returned.
+    - When C(name) is omitted, all task sequences in the site are returned.
+    - Packge ID is not supported for this module at this point.
+    - This module never makes changes; C(changed) is always C(false).
+  version_added: "1.1.0"
+  extends_documentation_fragment:
+    - microsoft.mecm.uses_cm_ps_module
+  options:
+    name:
+      description:
+        - The name of the task sequence to retrieve.
+        - When omitted, all task sequences in the site are returned.
+        - Multiple task sequences can share the same name; all matches are returned.
+      type: str
+      required: false
+  author:
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
+
+EXAMPLES: |
+  - name: Get all task sequences
+    microsoft.mecm.task_sequence_info:
+      site_code: "ECO"
+    register: all_ts
+
+  - name: Get task sequence(s) by name
+    microsoft.mecm.task_sequence_info:
+      site_code: "ECO"
+      name: "Deploy Windows 11"
+    register: ts_info_by_name
+
+RETURN:
+  task_sequences:
+    description: List of task sequences matching the query.
+    returned: always
+    type: list
+    elements: dict
+    contains:
+      name:
+        description: Name of the task sequence.
+        type: str
+        returned: always
+        sample: "Deploy Windows 11"
+      package_id:
+        description: Package ID of the task sequence.
+        type: str
+        returned: always
+        sample: "ECO000B6"
+      description:
+        description: Description of the task sequence.
+        type: str
+        returned: always
+        sample: "Bare-metal Windows 11 deployment sequence"
+      boot_image_id:
+        description: Package ID of the associated boot image.
+        type: str
+        returned: always
+        sample: "ECO00002"
+      ts_enabled:
+        description: Whether the task sequence is enabled.
+        type: bool
+        returned: always
+        sample: true
