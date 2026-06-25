@@ -5,61 +5,7 @@
 
 #AnsibleRequires -CSharpUtil Ansible.Basic
 #AnsibleRequires -PowerShell ..module_utils._CMPsSetupUtils
-
-$RUN_TYPE_MAP = @{
-    'DoNotRunThisRuleAutomatically' = 0
-    'RunTheRuleOnSchedule' = 1
-    'RunTheRuleAfterAnySoftwareUpdatePointSynchronization' = 2
-}
-
-
-function Get-CurrentRunType {
-    <#
-    .SYNOPSIS
-    Derives the effective run_type string from the stored ADR properties.
-    #>
-    param (
-        [Parameter(Mandatory = $true)][object]$adr
-    )
-
-    $align_with_sync = $null
-    if (-not [string]::IsNullOrEmpty($adr.AutoDeploymentProperties)) {
-        try {
-            [xml]$xml = $adr.AutoDeploymentProperties
-            $align_with_sync = $xml.AutoDeploymentRule.AlignWithSyncSchedule
-        }
-        catch {
-            $null = $_
-        }
-    }
-
-    if ($align_with_sync -eq 'true') {
-        return 'RunTheRuleAfterAnySoftwareUpdatePointSynchronization'
-    }
-
-    if (-not [string]::IsNullOrEmpty($adr.Schedule)) {
-        return 'RunTheRuleOnSchedule'
-    }
-
-    return 'DoNotRunThisRuleAutomatically'
-}
-
-
-function Format-ADRResult {
-    param (
-        [Parameter(Mandatory = $true)][object]$adr
-    )
-    $current_run_type_str = Get-CurrentRunType -adr $adr
-    return @{
-        name = $adr.Name
-        id = $adr.AutoDeploymentID.ToString()
-        description = $adr.Description
-        collection_id = $adr.CollectionID
-        is_enabled = [bool]$adr.AutoDeploymentEnabled
-        run_type = $RUN_TYPE_MAP[$current_run_type_str]
-        last_run_time = Format-DateTimeAsStringSafely -dateTimeObject $adr.LastRunTime
-    }
-}
+#AnsibleRequires -PowerShell ..module_utils._ADRUtils
 
 
 $spec = @{

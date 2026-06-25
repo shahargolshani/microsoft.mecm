@@ -8,23 +8,13 @@ DOCUMENTATION:
   description:
     - Creates, updates, or removes a Software Update Auto Deployment Rule (ADR) in a
       Configuration Manager site.
-    - Uses C(New-CMSoftwareUpdateAutoDeploymentRule), C(Set-CMSoftwareUpdateAutoDeploymentRule),
-      and C(Remove-CMSoftwareUpdateAutoDeploymentRule) PowerShell cmdlets.
     - The unique identifier for an ADR is its O(name). Lookup is always performed by name.
     - For more information, see
       U(https://learn.microsoft.com/en-us/powershell/module/configurationmanager/new-cmsoftwareupdateautodeploymentrule).
-  version_added: "1.3.0"
+  version_added: "1.1.0"
   extends_documentation_fragment:
     - microsoft.mecm.uses_cm_ps_module
-  requirements:
-    - Microsoft Endpoint Configuration Manager PowerShell module (ConfigurationManager)
-    - Administrative access to Microsoft Endpoint Configuration Manager site server
   options:
-    site_code:
-      description:
-        - The site code of the Configuration Manager site to connect to.
-      type: str
-      required: true
     name:
       description:
         - The name of the Software Update Auto Deployment Rule.
@@ -79,8 +69,7 @@ DOCUMENTATION:
       description:
         - Specifies when the ADR is evaluated.
         - V(DoNotRunThisRuleAutomatically) disables automatic evaluation.
-        - V(RunTheRuleAfterAnySoftwareUpdatePointSynchronization) evaluates after each
-          SUP synchronisation.
+        - V(RunTheRuleAfterAnySoftwareUpdatePointSynchronization) evaluates after each SUP synchronisation.
         - V(RunTheRuleOnSchedule) evaluates according to O(schedule).
       type: str
       choices:
@@ -91,7 +80,6 @@ DOCUMENTATION:
     schedule:
       description:
         - Schedule definition used when O(run_type=RunTheRuleOnSchedule).
-        - Passed to C(New-CMSchedule) to build a schedule object.
       type: dict
       required: false
       suboptions:
@@ -319,8 +307,7 @@ DOCUMENTATION:
       required: false
     no_install_on_unprotected:
       description:
-        - When V(true), does not install updates on clients not protected by a fallback
-          status point.
+        - When V(true), does not install updates on clients not protected by a fallback status point.
       type: bool
       required: false
     write_filter_handling:
@@ -347,19 +334,14 @@ DOCUMENTATION:
       required: false
     require_post_reboot_full_scan:
       description:
-        - When V(true), requires a full software update scan after reboot to verify
-          compliance.
+        - When V(true), requires a full software update scan after reboot to verify compliance.
       type: bool
       required: false
   notes:
-    - This module requires the Microsoft Endpoint Configuration Manager Console to be installed on
-      the target machine.
-    - This module supports check mode (V(-WhatIf)). In check mode, C(changed=true) is reported
-      when a change would occur, but no changes are made.
     - The collection of an existing ADR cannot be changed. To change the target collection,
       set O(state=absent) and recreate the ADR with the new O(collection_name).
   author:
-    - Ansible Ecosystem Engineering team (@ansible)
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
 
 EXAMPLES: |
   - name: Create a basic Software Update ADR

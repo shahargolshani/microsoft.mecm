@@ -5,6 +5,7 @@
 
 #AnsibleRequires -CSharpUtil Ansible.Basic
 #AnsibleRequires -PowerShell ..module_utils._CMPsSetupUtils
+#AnsibleRequires -PowerShell ..module_utils._ADRUtils
 
 $RUN_TYPE_MAP = @{
     'DoNotRunThisRuleAutomatically' = 0
@@ -26,89 +27,6 @@ $SEVERITY_XML_MAP = @{
     'None' = "'0'"
 }
 
-
-function Format-ADRResult {
-    param (
-        [Parameter(Mandatory = $true)][object]$adr
-    )
-    $current_run_type_str = Get-CurrentRunType -adr $adr
-    return @{
-        name = $adr.Name
-        id = $adr.AutoDeploymentID.ToString()
-        description = $adr.Description
-        collection_id = $adr.CollectionID
-        is_enabled = [bool]$adr.AutoDeploymentEnabled
-        run_type = $RUN_TYPE_MAP[$current_run_type_str]
-        last_run_time = Format-DateTimeAsStringSafely -dateTimeObject $adr.LastRunTime
-    }
-}
-
-
-function Get-DeploymentTemplateProp {
-    <#
-    .SYNOPSIS
-    Returns the text value of a named element from the DeploymentTemplate XML, or $null.
-    #>
-    param (
-        [Parameter(Mandatory = $true)][object]$adr,
-        [Parameter(Mandatory = $true)][string]$element_name
-    )
-    if ([string]::IsNullOrEmpty($adr.DeploymentTemplate)) {
-        return $null
-    }
-    try {
-        [xml]$xml = $adr.DeploymentTemplate
-        return $xml.DeploymentCreationActionXML.$element_name
-    }
-    catch {
-        return $null
-    }
-}
-
-
-function Get-AutoDeploymentProp {
-    <#
-    .SYNOPSIS
-    Returns the text value of a named element from the AutoDeploymentProperties XML, or $null.
-    #>
-    param (
-        [Parameter(Mandatory = $true)][object]$adr,
-        [Parameter(Mandatory = $true)][string]$element_name
-    )
-    if ([string]::IsNullOrEmpty($adr.AutoDeploymentProperties)) {
-        return $null
-    }
-    try {
-        [xml]$xml = $adr.AutoDeploymentProperties
-        return $xml.AutoDeploymentRule.$element_name
-    }
-    catch {
-        return $null
-    }
-}
-
-
-function Get-CurrentRunType {
-    <#
-    .SYNOPSIS
-    Derives the effective run_type string from the stored ADR properties.
-    #>
-    param (
-        [Parameter(Mandatory = $true)][object]$adr
-    )
-
-    $align_with_sync = Get-AutoDeploymentProp -adr $adr -element_name 'AlignWithSyncSchedule'
-
-    if ($align_with_sync -eq 'true') {
-        return 'RunTheRuleAfterAnySoftwareUpdatePointSynchronization'
-    }
-
-    if (-not [string]::IsNullOrEmpty($adr.Schedule)) {
-        return 'RunTheRuleOnSchedule'
-    }
-
-    return 'DoNotRunThisRuleAutomatically'
-}
 
 
 function Get-UpdateRuleXMLValue {
@@ -347,6 +265,32 @@ function Build-ADRCmdletParam {
 }
 
 
+function Test-PropMapChanged {
+    <#
+    .SYNOPSIS
+    Returns $true if any mapped module parameter differs from its current ADR property value.
+    #>
+    param (
+        [Parameter(Mandatory = $true)][object]$module,
+        [Parameter(Mandatory = $true)][object]$adr,
+        [Parameter(Mandatory = $true)][hashtable]$map,
+        [Parameter(Mandatory = $true)][scriptblock]$getter,
+        [Parameter(Mandatory = $true)][scriptblock]$comparator
+    )
+    foreach ($param in $map.Keys) {
+        if ($null -ne $module.Params.$param) {
+            $current = & $getter $adr $map[$param]
+            if ($null -ne $current) {
+                if (& $comparator $module.Params.$param $current) {
+                    return $true
+                }
+            }
+        }
+    }
+    return $false
+}
+
+
 function Test-ADRNeedsUpdate {
     <#
     .SYNOPSIS
@@ -370,20 +314,19 @@ function Test-ADRNeedsUpdate {
         }
     }
 
+    $get_adp = { param($a, $n) Get-AutoDeploymentProp -adr $a -element_name $n }
+    $get_dt = { param($a, $n) Get-DeploymentTemplateProp -adr $a -element_name $n }
+    $cmp_bool_true = { param($d, $c) [bool]$d -ne ($c -eq 'true') }
+    $cmp_negated_bool_true = { param($d, $c) (-not [bool]$d) -ne ($c -eq 'true') }
+    $cmp_bool_checked = { param($d, $c) [bool]$d -ne ($c -eq 'Checked') }
+    $cmp_int = { param($d, $c) [int]$d -ne [int]$c }
+    $cmp_str = { param($d, $c) $d -ne $c }
+
     $adp_bool_map = @{
         add_to_existing_software_update_group = 'UseSameDeployment'
         generate_failure_alert = 'EnableFailureAlert'
     }
-    foreach ($param in $adp_bool_map.Keys) {
-        if ($null -ne $module.Params.$param) {
-            $current = Get-AutoDeploymentProp -adr $adr -element_name $adp_bool_map[$param]
-            if ($null -ne $current) {
-                if ([bool]$module.Params.$param -ne ($current -eq 'true')) {
-                    return $true
-                }
-            }
-        }
-    }
+    if (Test-PropMapChanged -module $module -adr $adr -map $adp_bool_map -getter $get_adp -comparator $cmp_bool_true) { return $true }
 
     $dt_bool_map = @{
         use_utc = 'Utc'
@@ -398,35 +341,13 @@ function Test-ADRNeedsUpdate {
         allow_use_metered_network = 'AllowUseMeteredNetwork'
         download_from_microsoft_update = 'AllowWUMU'
     }
-    foreach ($param in $dt_bool_map.Keys) {
-        if ($null -ne $module.Params.$param) {
-            $current = Get-DeploymentTemplateProp -adr $adr -element_name $dt_bool_map[$param]
-            if ($null -ne $current) {
-                if ([bool]$module.Params.$param -ne ($current -eq 'true')) {
-                    return $true
-                }
-            }
-        }
-    }
+    if (Test-PropMapChanged -module $module -adr $adr -map $dt_bool_map -getter $get_dt -comparator $cmp_bool_true) { return $true }
 
-    if ($null -ne $module.Params.no_install_on_remote) {
-        $current = Get-DeploymentTemplateProp -adr $adr -element_name 'UseRemoteDP'
-        if ($null -ne $current) {
-            $desired_use_remote = -not ([bool]$module.Params.no_install_on_remote)
-            if ($desired_use_remote -ne ($current -eq 'true')) {
-                return $true
-            }
-        }
+    $dt_negated_map = @{
+        no_install_on_remote = 'UseRemoteDP'
+        no_install_on_unprotected = 'UseUnprotectedDP'
     }
-    if ($null -ne $module.Params.no_install_on_unprotected) {
-        $current = Get-DeploymentTemplateProp -adr $adr -element_name 'UseUnprotectedDP'
-        if ($null -ne $current) {
-            $desired_use_unprotected = -not ([bool]$module.Params.no_install_on_unprotected)
-            if ($desired_use_unprotected -ne ($current -eq 'true')) {
-                return $true
-            }
-        }
-    }
+    if (Test-PropMapChanged -module $module -adr $adr -map $dt_negated_map -getter $get_dt -comparator $cmp_negated_bool_true) { return $true }
 
     $dt_checked_map = @{
         suppress_restart_server = 'SuppressServers'
@@ -434,16 +355,7 @@ function Test-ADRNeedsUpdate {
         write_filter_handling = 'PersistOnWriteFilterDevices'
         require_post_reboot_full_scan = 'RequirePostRebootFullScan'
     }
-    foreach ($param in $dt_checked_map.Keys) {
-        if ($null -ne $module.Params.$param) {
-            $current = Get-DeploymentTemplateProp -adr $adr -element_name $dt_checked_map[$param]
-            if ($null -ne $current) {
-                if ([bool]$module.Params.$param -ne ($current -eq 'Checked')) {
-                    return $true
-                }
-            }
-        }
-    }
+    if (Test-PropMapChanged -module $module -adr $adr -map $dt_checked_map -getter $get_dt -comparator $cmp_bool_checked) { return $true }
 
     $dt_int_map = @{
         deadline_time = 'Duration'
@@ -451,16 +363,7 @@ function Test-ADRNeedsUpdate {
         success_percentage = 'AlertThresholdPercentage'
         alert_time = 'AlertDuration'
     }
-    foreach ($param in $dt_int_map.Keys) {
-        if ($null -ne $module.Params.$param) {
-            $current = Get-DeploymentTemplateProp -adr $adr -element_name $dt_int_map[$param]
-            if ($null -ne $current) {
-                if ([int]$module.Params.$param -ne [int]$current) {
-                    return $true
-                }
-            }
-        }
-    }
+    if (Test-PropMapChanged -module $module -adr $adr -map $dt_int_map -getter $get_dt -comparator $cmp_int) { return $true }
 
     $dt_str_map = @{
         deadline_time_unit = 'DurationUnits'
@@ -468,16 +371,7 @@ function Test-ADRNeedsUpdate {
         alert_time_unit = 'AlertDurationUnits'
         user_notification = 'UserNotificationOption'
     }
-    foreach ($param in $dt_str_map.Keys) {
-        if ($null -ne $module.Params.$param) {
-            $current = Get-DeploymentTemplateProp -adr $adr -element_name $dt_str_map[$param]
-            if ($null -ne $current) {
-                if ($module.Params.$param -ne $current) {
-                    return $true
-                }
-            }
-        }
-    }
+    if (Test-PropMapChanged -module $module -adr $adr -map $dt_str_map -getter $get_dt -comparator $cmp_str) { return $true }
 
     if ($null -ne $module.Params.verbose_level) {
         $current = Get-DeploymentTemplateProp -adr $adr -element_name 'StateMessageVerbosity'
