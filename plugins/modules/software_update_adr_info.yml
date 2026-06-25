@@ -36,7 +36,7 @@ DOCUMENTATION:
     - When O(name) is provided and the ADR is not found, the module emits a warning and
       returns an empty list.
   author:
-    - Ansible Ecosystem Engineering team (@ansible)
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
 
 EXAMPLES: |
   - name: Gather information about all Software Update ADRs
