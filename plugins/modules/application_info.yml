@@ -7,15 +7,10 @@ DOCUMENTATION:
   short_description: Gather information about Microsoft Endpoint Configuration Manager (MECM) applications
   description:
     - This module gathers information about one or more applications in a Configuration Manager site.
-    - Uses the Get-CMApplication cmdlet.
     - This is a read-only module that does not make any changes to the system.
   version_added: "1.1.0"
   extends_documentation_fragment:
     - microsoft.mecm.uses_cm_ps_module
-  requirements:
-    - SCCM PowerShell module (ConfigurationManager)
-    - Administrative access to SCCM site server
-    - WMI access to SCCM site database
   options:
     name:
       description:
@@ -24,25 +19,16 @@ DOCUMENTATION:
       type: str
       required: false
   notes:
-    - This module requires the Microsoft Endpoint Configuration Manager Console to be installed on the target machine.
-    - The module uses Get-CMApplication cmdlet to gather application information.
     - This is an info module that does not make any changes to the system.
     - "B(Permissions): Requires administrative access to query MECM applications."
   author:
-    - Ansible Ecosystem Engineering team (@ansible)
-    - Shahar Golshani (@shahargolshani)
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
 
 EXAMPLES: |
   - name: Get all applications
     microsoft.mecm.application_info:
       site_code: "XYZ"
     register: all_apps
-
-  - name: Get a specific application by name
-    microsoft.mecm.application_info:
-      site_code: "XYZ"
-      name: "My Application"
-    register: app_info
 
   - name: Check if an application exists
     microsoft.mecm.application_info:

@@ -7,13 +7,11 @@
 #AnsibleRequires -PowerShell ..module_utils._CMPsSetupUtils
 
 
-# SMS_ApplicationAssignment.DesiredConfigType
 $DEPLOY_PURPOSE_MAP = @{
     'Required' = 1
     'Available' = 2
 }
 
-# SMS_ApplicationAssignment.OfferTypeID
 $DEPLOY_ACTION_MAP = @{
     'Install' = 0
     'Uninstall' = 2

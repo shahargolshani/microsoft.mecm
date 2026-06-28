@@ -10,20 +10,11 @@ DOCUMENTATION:
       in a Configuration Manager site.
     - When O(deployment_type_name) is specified, returns a single deployment type matching that name.
     - When O(deployment_type_name) is omitted, returns all deployment types for the application.
-    - Uses the Get-CMDeploymentType cmdlet.
     - This is a read-only module that does not make any changes to the system.
   version_added: "1.1.0"
   extends_documentation_fragment:
     - microsoft.mecm.uses_cm_ps_module
-  requirements:
-    - SCCM PowerShell module (ConfigurationManager)
-    - Administrative access to SCCM site server
   options:
-    site_code:
-      description:
-        - The site code of the Configuration Manager site to connect to.
-      type: str
-      required: true
     application_name:
       description:
         - The name of the application to query deployment types for.
@@ -36,13 +27,10 @@ DOCUMENTATION:
       type: str
       required: false
   notes:
-    - This module requires the Microsoft Endpoint Configuration Manager Console to be installed on the target machine.
-    - The module uses Get-CMDeploymentType cmdlet to gather deployment type information.
     - This is an info module that does not make any changes to the system.
     - "B(Permissions): Requires administrative access to query MECM deployment types."
   author:
-    - Ansible Ecosystem Engineering team (@ansible)
-    - Shahar Golshani (@shahargolshani)
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
 
 EXAMPLES: |
   - name: Get all deployment types for an application

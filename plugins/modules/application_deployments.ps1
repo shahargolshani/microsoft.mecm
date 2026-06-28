@@ -7,13 +7,11 @@
 #AnsibleRequires -PowerShell ..module_utils._CMPsSetupUtils
 
 
-# SMS_ApplicationAssignment.DesiredConfigType
 $DEPLOY_PURPOSE_MAP = @{
     'Required' = 1
     'Available' = 2
 }
 
-# SMS_ApplicationAssignment.OfferTypeID
 $DEPLOY_ACTION_MAP = @{
     'Install' = 0
     'Uninstall' = 2
@@ -152,7 +150,6 @@ $state = $module.Params.state
 Import-CMPsModule -module $module
 Test-CMSiteNameAndConnect -module $module -SiteCode $site_code
 
-# Look up existing deployment for this application + collection combination
 $all_app_deployments = @(Get-CMApplicationDeployment -Name $name -ErrorAction SilentlyContinue)
 $existing = $all_app_deployments | Where-Object { $_.CollectionName -eq $collection_name } | Select-Object -First 1
 
@@ -205,7 +202,6 @@ elseif ($state -eq 'present') {
     }
 
     if ($null -eq $existing) {
-        # --- Create new deployment ---
         $module.result.changed = $true
         $new_params = @{
             Name = $name
@@ -228,8 +224,6 @@ elseif ($state -eq 'present') {
                 try {
                     $app_obj = Get-CMApplication -Name $name -ErrorAction SilentlyContinue
                     if ($null -ne $app_obj) {
-                        # Get all content (packages/applications) distributed to this DP group
-                        # and check if this application's PackageID appears in the list
                         $group_content = @(Get-CMDeploymentPackage -DistributionPointGroupName $dp_group_name -ErrorAction SilentlyContinue)
                         $app_pkg_id = $app_obj.PackageID
                         $already_distributed = ($group_content | Where-Object { $_.PackageID -eq $app_pkg_id }).Count -gt 0
@@ -258,7 +252,6 @@ elseif ($state -eq 'present') {
             New-CMApplicationDeployment @new_params -WhatIf:$module.CheckMode | Out-Null
         }
         catch {
-            # Catch the case where content distribution was requested but already done
             if ($_.Exception.Message -like '*already been distributed*' -or
                 $_.Exception.Message -like '*No content destination*') {
                 $module.Warn(
@@ -296,7 +289,6 @@ elseif ($state -eq 'present') {
         }
     }
     else {
-        # --- Update existing deployment ---
         $creation_only_used = [System.Collections.Generic.List[string]]@()
         if (-not [string]::IsNullOrEmpty($module.Params.deploy_action)) {
             $creation_only_used.Add("deploy_action='$($module.Params.deploy_action)'")

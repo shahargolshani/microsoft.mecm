@@ -5,35 +5,7 @@
 
 #AnsibleRequires -CSharpUtil Ansible.Basic
 #AnsibleRequires -PowerShell ..module_utils._CMPsSetupUtils
-
-
-# Maps boundary type string names (as accepted by New/Set-CMBoundary -Type) to the integer
-# values stored in the BoundaryType property returned by Get-CMBoundary.
-$BOUNDARY_TYPE_INT = @{
-    IPSubnet = 0
-    ADSite = 1
-    IPV6Prefix = 2
-    IPRange = 3
-    Vpn = 4
-}
-
-
-function Format-BoundaryResult {
-    param (
-        [Parameter(Mandatory = $true)][object]$boundary
-    )
-    $type_int = [int]$boundary.BoundaryType
-    $type_str = ($BOUNDARY_TYPE_INT.GetEnumerator() | Where-Object { $_.Value -eq $type_int } | Select-Object -First 1).Key
-
-    return @{
-        boundary_id = $boundary.BoundaryID.ToString()
-        name = $boundary.DisplayName
-        type = $type_str
-        type_id = $type_int
-        value = $boundary.Value
-        group_count = [int]$boundary.GroupCount
-    }
-}
+#AnsibleRequires -PowerShell ..module_utils._BoundaryUtils
 
 
 # Looks up a boundary by the unique type:value pair.
@@ -49,10 +21,6 @@ function Get-BoundaryByTypeAndValue {
 }
 
 
-# Validates that when type is Vpn the value matches one of the accepted formats:
-#   Auto:On
-#   Name:<vpn_name>
-#   Description:<vpn_description>
 function Assert-VpnBoundaryValue {
     param (
         [Parameter(Mandatory = $true)][object]$module,
@@ -105,7 +73,7 @@ if ($type -eq 'Vpn') {
 Import-CMPsModule -module $module
 Test-CMSiteNameAndConnect -module $module -SiteCode $site_code
 
-$desired_type_int = $BOUNDARY_TYPE_INT[$type]
+$desired_type_int = ConvertTo-BoundaryTypeInt -TypeStr $type
 $boundary = Get-BoundaryByTypeAndValue -type_int $desired_type_int -value $value
 
 if ($state -eq 'absent') {

@@ -85,7 +85,6 @@ elseif ($state -eq 'present') {
             $module.FailJson("Cannot rename DP group to '$new_name' because no group exists with the original name '$name'.")
         }
 
-        # --- Create new group ---
         $module.result.changed = $true
         $create_params = @{ Name = $name }
         if (-not [string]::IsNullOrEmpty($description)) {
@@ -122,10 +121,8 @@ elseif ($state -eq 'present') {
         }
     }
     else {
-        # --- Update existing group ---
         # The effective name after a potential rename
         $current_name = $name
-
         # Rename if new_name is requested and differs from current name
         if (-not [string]::IsNullOrEmpty($new_name) -and $new_name -ne $name) {
             $module.result.changed = $true
@@ -138,7 +135,6 @@ elseif ($state -eq 'present') {
             $current_name = $new_name
         }
 
-        # Update description if provided and differs
         if (-not [string]::IsNullOrEmpty($description) -and $description -ne $existing_group.Description) {
             $module.result.changed = $true
             try {
@@ -150,7 +146,6 @@ elseif ($state -eq 'present') {
             }
         }
 
-        # Reconcile distribution point membership
         if ($null -ne $desired_dps) {
             $current_dps = Get-DPNamesForGroup -groupName $current_name
             $current_dps_norm = @($current_dps | ForEach-Object { $_.ToLower() })

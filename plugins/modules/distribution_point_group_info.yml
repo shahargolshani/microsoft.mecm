@@ -4,23 +4,14 @@
 
 DOCUMENTATION:
   module: distribution_point_group_info
-  short_description: Retrieve Distribution Point Group information from MECM
+  short_description: Retrieve Distribution Point Group information from Microsoft Endpoint Configuration Manager (MECM)
   description:
     - Returns information about one or all Distribution Point Groups in a Configuration Manager site.
     - For each group, the list of member distribution point FQDNs is included.
-    - Uses C(Get-CMDistributionPointGroup) and C(Get-CMDistributionPoint -DistributionPointGroupName).
   version_added: "1.1.0"
   extends_documentation_fragment:
     - microsoft.mecm.uses_cm_ps_module
-  requirements:
-    - Microsoft Endpoint Configuration Manager PowerShell module (ConfigurationManager)
-    - Administrative access to Microsoft Endpoint Configuration Manager site server
   options:
-    site_code:
-      description:
-        - The site code of the Configuration Manager site to connect to.
-      type: str
-      required: true
     name:
       description:
         - Name of a specific distribution point group to retrieve.
@@ -29,7 +20,7 @@ DOCUMENTATION:
       type: str
       required: false
   author:
-    - "Ansible Project (@ansible)"
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
 
 EXAMPLES: |
   - name: Get all distribution point groups

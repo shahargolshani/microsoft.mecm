@@ -7,24 +7,14 @@ DOCUMENTATION:
   short_description: Retrieve information about site boundaries in Microsoft Endpoint Configuration Manager (MECM)
   description:
     - This module retrieves information about one or more site boundaries from a Configuration Manager site.
-    - Uses the V(Get-CMBoundary) PowerShell cmdlet.
     - When O(type) is not specified, all boundaries defined in the site are returned.
     - When O(type) is specified, only boundaries of that type are returned.
     - For more information, see
       U(https://learn.microsoft.com/en-us/powershell/module/configurationmanager/get-cmboundary).
-  version_added: "1.2.0"
+  version_added: "1.1.0"
   extends_documentation_fragment:
     - microsoft.mecm.uses_cm_ps_module
-  requirements:
-    - Microsoft Endpoint Configuration Manager PowerShell module (ConfigurationManager)
-    - Administrative access to Microsoft Endpoint Configuration Manager site server
   options:
-    site_code:
-      description:
-        - The site code of the Configuration Manager site to connect to.
-        - This determines which CM site drive to use and is required for connecting to the correct domain.
-      type: str
-      required: true
     name:
       description:
         - Optional boundary name filter (matches the V(Description)/V(BoundaryName) field in MECM).
@@ -52,13 +42,10 @@ DOCUMENTATION:
         - IPRange
         - Vpn
   notes:
-    - This module requires the Microsoft Endpoint Configuration Manager Console to be installed on the target machine.
     - This is a read-only module; it never modifies the site configuration.
-    - This module supports check mode (no difference in behaviour since it is read-only).
     - "B(Permissions): Requires read access to MECM site boundaries."
   author:
-    - Ansible Ecosystem Engineering team (@ansible)
-    - Shahar Golshani (@shahargolshani)
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
 
 EXAMPLES: |
   - name: Retrieve all boundaries in the site

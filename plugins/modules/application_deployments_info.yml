@@ -4,7 +4,7 @@
 
 DOCUMENTATION:
   module: application_deployments_info
-  short_description: Retrieve Application Deployment information from MECM
+  short_description: Retrieve Application Deployment information from Microsoft Endpoint Configuration Manager (MECM)
   description:
     - Returns deployment information for one or all application deployments in a Configuration Manager site.
     - When C(name) and C(collection_name) are both provided, returns the single deployment for that
@@ -13,19 +13,10 @@ DOCUMENTATION:
     - When C(name) is omitted, returns all application deployments site-wide.
     - C(collection_name) cannot be used without C(name).
     - A warning is emitted if the specified filters match no deployments.
-    - Uses C(Get-CMApplicationDeployment).
-  version_added: "1.2.0"
+  version_added: "1.1.0"
   extends_documentation_fragment:
     - microsoft.mecm.uses_cm_ps_module
-  requirements:
-    - Microsoft Endpoint Configuration Manager PowerShell module (ConfigurationManager)
-    - Administrative access to Microsoft Endpoint Configuration Manager site server
   options:
-    site_code:
-      description:
-        - The site code of the Configuration Manager site to connect to.
-      type: str
-      required: true
     name:
       description:
         - Filter results to deployments for this application name.
@@ -43,7 +34,7 @@ DOCUMENTATION:
       type: str
       required: false
   author:
-    - "Ansible Project (@ansible)"
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
 
 EXAMPLES: |
   - name: Get all application deployments site-wide
