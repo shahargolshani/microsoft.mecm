@@ -1,0 +1,619 @@
+---
+# Integration tests for maintenance_windows and maintenance_windows_info modules
+
+- name: Set test maintenance window variables
+  ansible.builtin.set_fact:
+    # MW 1: non-recurring (None), apply_to=Any, 2-hour window
+    test_mw_none_name: "{{ unique_test_id }}-mw-none"
+    # MW 2: daily (every 1 day), apply_to=SoftwareUpdatesOnly, 4-hour window
+    test_mw_daily_su_name: "{{ unique_test_id }}-mw-daily-su"
+    # MW 3: daily (every 7 days), apply_to=TaskSequencesOnly, 2-hour window
+    test_mw_daily_ts_name: "{{ unique_test_id }}-mw-daily-ts"
+    # Common schedule start date (fixed future date)
+    test_sched_start: "01/01/2027 02:00:00"
+
+- name: Test maintenance windows lifecycle
+  block:
+
+    # ==========================================================
+    # SECTION 1 — Validation: wrong inputs are rejected cleanly
+    # ==========================================================
+
+    - name: (Validation) Non-existent collection fails with clear error
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ unique_test_id }}-nonexistent-collection"
+        name: "{{ test_mw_none_name }}"
+        state: present
+        sched_recur_type: None
+        sched_duration_count: 2
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      register: _bad_collection
+      ignore_errors: true
+
+    - name: (Validation) Assert non-existent collection fails with expected message
+      ansible.builtin.assert:
+        that:
+          - _bad_collection is failed
+          - "'does not exist' in _bad_collection.msg"
+
+    - name: (Validation) Missing sched_start fails when state=present
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        state: present
+        sched_recur_type: None
+        sched_duration_count: 2
+        sched_duration_interval: Hours
+      register: _missing_start
+      ignore_errors: true
+
+    - name: (Validation) Assert missing sched_start fails with expected message
+      ansible.builtin.assert:
+        that:
+          - _missing_start is failed
+          - "'sched_start' in _missing_start.msg"
+          - "'required' in _missing_start.msg"
+
+    - name: (Validation) sched_recur_count=0 with Daily is out of range
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        state: present
+        sched_recur_type: Daily
+        sched_recur_count: 0
+        sched_duration_count: 2
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      register: _recur_count_low
+      ignore_errors: true
+
+    - name: (Validation) Assert sched_recur_count=0 is rejected
+      ansible.builtin.assert:
+        that:
+          - _recur_count_low is failed
+          - "'sched_recur_count' in _recur_count_low.msg"
+          - "'between 1 and 31' in _recur_count_low.msg"
+
+    - name: (Validation) sched_recur_count=32 with Daily is out of range
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        state: present
+        sched_recur_type: Daily
+        sched_recur_count: 32
+        sched_duration_count: 2
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      register: _recur_count_high
+      ignore_errors: true
+
+    - name: (Validation) Assert sched_recur_count=32 is rejected
+      ansible.builtin.assert:
+        that:
+          - _recur_count_high is failed
+          - "'sched_recur_count' in _recur_count_high.msg"
+          - "'between 1 and 31' in _recur_count_high.msg"
+
+    - name: (Validation) sched_recur_count missing with Daily is rejected
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        state: present
+        sched_recur_type: Daily
+        sched_duration_count: 2
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      register: _recur_count_missing
+      ignore_errors: true
+
+    - name: (Validation) Assert missing sched_recur_count fails when Daily
+      ansible.builtin.assert:
+        that:
+          - _recur_count_missing is failed
+          - "'sched_recur_count' in _recur_count_missing.msg"
+          - "'required' in _recur_count_missing.msg"
+
+    # ==========================================================
+    # SECTION 2 — MW 1: None recurrence, apply_to=Any
+    # ==========================================================
+
+    - name: (MW-None) Create - check mode
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        apply_to: Any
+        state: present
+        sched_recur_type: None
+        sched_duration_count: 2
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      check_mode: true
+      register: _mw_none_create_check
+
+    - name: (MW-None) Verify MW does not exist after check mode create
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+      register: _info_after_none_check
+
+    - name: (MW-None) Assert check mode reported changed but made no real change
+      ansible.builtin.assert:
+        that:
+          - _mw_none_create_check is changed
+          - _mw_none_create_check.maintenance_window.name == test_mw_none_name
+          - _mw_none_create_check.maintenance_window.apply_to == 'Any'
+          - _mw_none_create_check.maintenance_window.is_enabled == true
+          - _info_after_none_check.maintenance_windows | length == 0
+
+    - name: (MW-None) Create
+      microsoft.mecm.maintenance_windows: &create_mw_none
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        apply_to: Any
+        state: present
+        sched_recur_type: None
+        sched_duration_count: 2
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      register: _mw_none_create
+
+    - name: (MW-None) Create - idempotency
+      microsoft.mecm.maintenance_windows: *create_mw_none
+      register: _mw_none_create_idempotent
+
+    - name: (MW-None) Get info after creation
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+      register: _info_mw_none_created
+
+    - name: (MW-None) Assert creation, idempotency and info values
+      ansible.builtin.assert:
+        that:
+          - _mw_none_create is changed
+          - _mw_none_create_idempotent is not changed
+          - _info_mw_none_created.maintenance_windows | length == 1
+          - _info_mw_none_created.maintenance_windows[0].name == test_mw_none_name
+          - _info_mw_none_created.maintenance_windows[0].apply_to == 'Any'
+          - _info_mw_none_created.maintenance_windows[0].is_enabled == true
+          - _info_mw_none_created.maintenance_windows[0].duration == 120
+          - _info_mw_none_created.maintenance_windows[0].service_window_schedules | length > 0
+          - _info_mw_none_created.maintenance_windows[0].service_window_id is defined
+
+    # ==========================================================
+    # SECTION 3 — MW 2: Daily every 1 day, apply_to=SoftwareUpdatesOnly
+    # ==========================================================
+
+    - name: (MW-Daily-SU) Create - check mode
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_su_name }}"
+        apply_to: SoftwareUpdatesOnly
+        state: present
+        sched_recur_type: Daily
+        sched_recur_count: 1
+        sched_duration_count: 4
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      check_mode: true
+      register: _mw_daily_su_create_check
+
+    - name: (MW-Daily-SU) Verify MW does not exist after check mode create
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_su_name }}"
+      register: _info_after_daily_su_check
+
+    - name: (MW-Daily-SU) Assert check mode reported changed but made no real change
+      ansible.builtin.assert:
+        that:
+          - _mw_daily_su_create_check is changed
+          - _mw_daily_su_create_check.maintenance_window.name == test_mw_daily_su_name
+          - _mw_daily_su_create_check.maintenance_window.apply_to == 'SoftwareUpdatesOnly'
+          - _info_after_daily_su_check.maintenance_windows | length == 0
+
+    - name: (MW-Daily-SU) Create
+      microsoft.mecm.maintenance_windows: &create_mw_daily_su
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_su_name }}"
+        apply_to: SoftwareUpdatesOnly
+        state: present
+        sched_recur_type: Daily
+        sched_recur_count: 1
+        sched_duration_count: 4
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      register: _mw_daily_su_create
+
+    - name: (MW-Daily-SU) Create - idempotency
+      microsoft.mecm.maintenance_windows: *create_mw_daily_su
+      register: _mw_daily_su_create_idempotent
+
+    - name: (MW-Daily-SU) Get info after creation
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_su_name }}"
+      register: _info_mw_daily_su_created
+
+    - name: (MW-Daily-SU) Assert creation, idempotency and info values
+      ansible.builtin.assert:
+        that:
+          - _mw_daily_su_create is changed
+          - _mw_daily_su_create_idempotent is not changed
+          - _info_mw_daily_su_created.maintenance_windows | length == 1
+          - _info_mw_daily_su_created.maintenance_windows[0].name == test_mw_daily_su_name
+          - _info_mw_daily_su_created.maintenance_windows[0].apply_to == 'SoftwareUpdatesOnly'
+          - _info_mw_daily_su_created.maintenance_windows[0].is_enabled == true
+          - _info_mw_daily_su_created.maintenance_windows[0].duration == 240
+          - _info_mw_daily_su_created.maintenance_windows[0].service_window_schedules | length > 0
+
+    # ==========================================================
+    # SECTION 4 — MW 3: Daily every 7 days, apply_to=TaskSequencesOnly
+    # ==========================================================
+
+    - name: (MW-Daily-TS) Create
+      microsoft.mecm.maintenance_windows: &create_mw_daily_ts
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_ts_name }}"
+        apply_to: TaskSequencesOnly
+        state: present
+        sched_recur_type: Daily
+        sched_recur_count: 7
+        sched_duration_count: 2
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      register: _mw_daily_ts_create
+
+    - name: (MW-Daily-TS) Create - idempotency
+      microsoft.mecm.maintenance_windows: *create_mw_daily_ts
+      register: _mw_daily_ts_create_idempotent
+
+    - name: (MW-Daily-TS) Get info after creation
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_ts_name }}"
+      register: _info_mw_daily_ts_created
+
+    - name: (MW-Daily-TS) Assert creation, idempotency and info values
+      ansible.builtin.assert:
+        that:
+          - _mw_daily_ts_create is changed
+          - _mw_daily_ts_create_idempotent is not changed
+          - _info_mw_daily_ts_created.maintenance_windows | length == 1
+          - _info_mw_daily_ts_created.maintenance_windows[0].name == test_mw_daily_ts_name
+          - _info_mw_daily_ts_created.maintenance_windows[0].apply_to == 'TaskSequencesOnly'
+          - _info_mw_daily_ts_created.maintenance_windows[0].duration == 120
+
+    # ==========================================================
+    # SECTION 5 — Info module: system-wide and single window queries
+    # ==========================================================
+
+    - name: (Info) Get all maintenance windows for the collection
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+      register: _info_all_mws
+
+    - name: (Info) Assert all three test windows appear in the collection-wide list
+      ansible.builtin.assert:
+        that:
+          - _info_all_mws.maintenance_windows | length >= 3
+          - _info_all_mws.maintenance_windows | selectattr('name', 'equalto', test_mw_none_name) | list | length == 1
+          - _info_all_mws.maintenance_windows | selectattr('name', 'equalto', test_mw_daily_su_name) | list | length == 1
+          - _info_all_mws.maintenance_windows | selectattr('name', 'equalto', test_mw_daily_ts_name) | list | length == 1
+
+    - name: (Info) Get single maintenance window by name
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_su_name }}"
+      register: _info_single_mw
+
+    - name: (Info) Assert single-window query returns correct fields
+      ansible.builtin.assert:
+        that:
+          - _info_single_mw.maintenance_windows | length == 1
+          - _info_single_mw.maintenance_windows[0].name == test_mw_daily_su_name
+          - _info_single_mw.maintenance_windows[0].apply_to == 'SoftwareUpdatesOnly'
+          - _info_single_mw.maintenance_windows[0].is_enabled == true
+          - _info_single_mw.maintenance_windows[0].duration == 240
+          - _info_single_mw.maintenance_windows[0].service_window_id is defined
+          - _info_single_mw.maintenance_windows[0].service_window_schedules is defined
+
+    - name: (Info) Query a non-existent window name - should warn and return empty list
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ unique_test_id }}-nonexistent-mw"
+      register: _info_nonexistent_mw
+
+    - name: (Info) Assert non-existent name returns empty list with a warning
+      ansible.builtin.assert:
+        that:
+          - _info_nonexistent_mw.maintenance_windows | length == 0
+          - _info_nonexistent_mw.warnings | length > 0
+
+    # ==========================================================
+    # SECTION 6 — Update apply_to: Any → TaskSequencesOnly
+    # (uses MW 1 — the None-recurrence window)
+    # ==========================================================
+
+    - name: (Update-ApplyTo) Change apply_to - check mode
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        apply_to: TaskSequencesOnly
+        state: present
+        sched_recur_type: None
+        sched_duration_count: 2
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      check_mode: true
+      register: _update_apply_to_check
+
+    - name: (Update-ApplyTo) Verify apply_to still shows old value after check mode
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+      register: _info_after_apply_to_check
+
+    - name: (Update-ApplyTo) Assert check mode reported changed but kept old apply_to
+      ansible.builtin.assert:
+        that:
+          - _update_apply_to_check is changed
+          - _info_after_apply_to_check.maintenance_windows[0].apply_to == 'Any'
+
+    - name: (Update-ApplyTo) Change apply_to to TaskSequencesOnly
+      microsoft.mecm.maintenance_windows: &update_apply_to
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        apply_to: TaskSequencesOnly
+        state: present
+        sched_recur_type: None
+        sched_duration_count: 2
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      register: _update_apply_to
+
+    - name: (Update-ApplyTo) Change apply_to - idempotency
+      microsoft.mecm.maintenance_windows: *update_apply_to
+      register: _update_apply_to_idempotent
+
+    - name: (Update-ApplyTo) Get info after apply_to change
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+      register: _info_after_apply_to_update
+
+    - name: (Update-ApplyTo) Assert apply_to updated correctly and is idempotent
+      ansible.builtin.assert:
+        that:
+          - _update_apply_to is changed
+          - _update_apply_to_idempotent is not changed
+          - _info_after_apply_to_update.maintenance_windows[0].apply_to == 'TaskSequencesOnly'
+          - _info_after_apply_to_update.maintenance_windows[0].duration == 120
+
+    # ==========================================================
+    # SECTION 7 — Update schedule: 2 Hours → 3 Hours
+    # (uses MW 1 — now with apply_to=TaskSequencesOnly from section 6)
+    # ==========================================================
+
+    - name: (Update-Schedule) Capture existing schedule hex token before change
+      ansible.builtin.set_fact:
+        schedule_before_update: "{{ _info_after_apply_to_update.maintenance_windows[0].service_window_schedules }}"
+
+    - name: (Update-Schedule) Change duration from 2 Hours to 3 Hours - check mode
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        apply_to: TaskSequencesOnly
+        state: present
+        sched_recur_type: None
+        sched_duration_count: 3
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      check_mode: true
+      register: _update_schedule_check
+
+    - name: (Update-Schedule) Verify schedule unchanged after check mode
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+      register: _info_after_schedule_check
+
+    - name: (Update-Schedule) Assert check mode reported changed but kept old schedule
+      ansible.builtin.assert:
+        that:
+          - _update_schedule_check is changed
+          - _info_after_schedule_check.maintenance_windows[0].duration == 120
+          - _info_after_schedule_check.maintenance_windows[0].service_window_schedules == schedule_before_update
+
+    - name: (Update-Schedule) Change duration to 3 Hours
+      microsoft.mecm.maintenance_windows: &update_schedule
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        apply_to: TaskSequencesOnly
+        state: present
+        sched_recur_type: None
+        sched_duration_count: 3
+        sched_duration_interval: Hours
+        sched_start: "{{ test_sched_start }}"
+      register: _update_schedule
+
+    - name: (Update-Schedule) Change duration - idempotency
+      microsoft.mecm.maintenance_windows: *update_schedule
+      register: _update_schedule_idempotent
+
+    - name: (Update-Schedule) Get info after schedule change
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+      register: _info_after_schedule_update
+
+    - name: (Update-Schedule) Assert schedule updated correctly and is idempotent
+      ansible.builtin.assert:
+        that:
+          - _update_schedule is changed
+          - _update_schedule_idempotent is not changed
+          - _info_after_schedule_update.maintenance_windows[0].duration == 180
+          - _info_after_schedule_update.maintenance_windows[0].service_window_schedules != schedule_before_update
+
+    # ==========================================================
+    # SECTION 8 — Delete: check mode, actual, idempotency
+    # All verified via maintenance_windows_info
+    # ==========================================================
+
+    - name: (Delete-MW-None) Delete - check mode
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        state: absent
+      check_mode: true
+      register: _delete_none_check
+
+    - name: (Delete-MW-None) Verify MW still exists after check mode delete
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+      register: _info_after_delete_none_check
+
+    - name: (Delete-MW-None) Assert check mode delete reported changed but kept the window
+      ansible.builtin.assert:
+        that:
+          - _delete_none_check is changed
+          - _info_after_delete_none_check.maintenance_windows | length == 1
+
+    - name: (Delete-MW-None) Delete
+      microsoft.mecm.maintenance_windows: &delete_mw_none
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        state: absent
+      register: _delete_none
+
+    - name: (Delete-MW-None) Delete - idempotency
+      microsoft.mecm.maintenance_windows: *delete_mw_none
+      register: _delete_none_idempotent
+
+    - name: (Delete-MW-None) Verify MW no longer exists
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+      register: _info_after_delete_none
+
+    - name: (Delete-MW-None) Assert delete and idempotency
+      ansible.builtin.assert:
+        that:
+          - _delete_none is changed
+          - _delete_none.maintenance_window.name == test_mw_none_name
+          - _delete_none_idempotent is not changed
+          - _info_after_delete_none.maintenance_windows | length == 0
+          - _info_after_delete_none.warnings | length > 0
+
+    - name: (Delete-MW-Daily-SU) Delete
+      microsoft.mecm.maintenance_windows: &delete_mw_daily_su
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_su_name }}"
+        state: absent
+      register: _delete_daily_su
+
+    - name: (Delete-MW-Daily-SU) Delete - idempotency
+      microsoft.mecm.maintenance_windows: *delete_mw_daily_su
+      register: _delete_daily_su_idempotent
+
+    - name: (Delete-MW-Daily-SU) Verify MW no longer exists
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_su_name }}"
+      register: _info_after_delete_daily_su
+
+    - name: (Delete-MW-Daily-SU) Assert delete and idempotency
+      ansible.builtin.assert:
+        that:
+          - _delete_daily_su is changed
+          - _delete_daily_su_idempotent is not changed
+          - _info_after_delete_daily_su.maintenance_windows | length == 0
+
+    - name: (Delete-MW-Daily-TS) Delete
+      microsoft.mecm.maintenance_windows: &delete_mw_daily_ts
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_ts_name }}"
+        state: absent
+      register: _delete_daily_ts
+
+    - name: (Delete-MW-Daily-TS) Delete - idempotency
+      microsoft.mecm.maintenance_windows: *delete_mw_daily_ts
+      register: _delete_daily_ts_idempotent
+
+    - name: (Delete-MW-Daily-TS) Verify MW no longer exists
+      microsoft.mecm.maintenance_windows_info:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_ts_name }}"
+      register: _info_after_delete_daily_ts
+
+    - name: (Delete-MW-Daily-TS) Assert delete and idempotency
+      ansible.builtin.assert:
+        that:
+          - _delete_daily_ts is changed
+          - _delete_daily_ts_idempotent is not changed
+          - _info_after_delete_daily_ts.maintenance_windows | length == 0
+
+  always:
+    # ----------------------------------------------------------
+    # Cleanup: ensure all test MWs are removed even if the test
+    # block failed partway through
+    # ----------------------------------------------------------
+    - name: Cleanup - remove None-recurrence test MW
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_none_name }}"
+        state: absent
+      ignore_errors: true
+
+    - name: Cleanup - remove Daily-SU test MW
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_su_name }}"
+        state: absent
+      ignore_errors: true
+
+    - name: Cleanup - remove Daily-TS test MW
+      microsoft.mecm.maintenance_windows:
+        site_code: "{{ test_site_code }}"
+        device_collection_name: "{{ test_collection_name }}"
+        name: "{{ test_mw_daily_ts_name }}"
+        state: absent
+      ignore_errors: true
