@@ -1,0 +1,139 @@
+---
+# Copyright: (c) 2025, Ansible Project
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+DOCUMENTATION:
+  module: task_sequence
+  short_description: Create, import, update, or delete a Task Sequence in MECM
+  description:
+    - Create, import, update, or remove a Task Sequence in a Configuration Manager site.
+    - Supports two creation methods; C(import) to import from a C(.zip) export file, and C(custom)
+      to create a custom task sequence with explicit parameters.
+    - For C(create_method=import), the import mode is C(Overwrite),
+      The module always creates or overwrites the task sequence if it already exists and always reports C(changed=true).
+    - For C(create_method=custom), idempotency is name-based. If more than one task sequence
+      shares the given name, the module fails as the target is ambiguous.
+    - For C(state=absent), a package_id is mandatory.
+  version_added: "1.1.0"
+  extends_documentation_fragment:
+    - microsoft.mecm.uses_cm_ps_module
+  options:
+    state:
+      description:
+        - Whether the task sequence should be C(present) or C(absent).
+        - When C(absent), only C(package_id) is used to locate and remove the task sequence.
+      type: str
+      choices:
+        - present
+        - absent
+      default: present
+    create_method:
+      description:
+        - How the task sequence should be created.
+        - C(import) imports from a C(.zip) export file.
+          The task sequence is always created or overwritten; C(changed) is always C(true).
+        - Required when C(state=present).
+      type: str
+      choices:
+        - import
+        - custom
+      required: false
+    import_path:
+      description:
+        - UNC or local path to the C(.zip) file exported from Configuration Manager.
+        - Required when C(create_method=import).
+        - "Example: C(\\\\server\\share\\TaskSequenceExport.zip)"
+      type: str
+      required: false
+    name:
+      description:
+        - The name of the task sequence.
+        - Required when C(create_method=custom).
+        - Used as the idempotency key for the custom creation path.
+      type: str
+      required: false
+    description:
+      description:
+        - An optional description for the task sequence.
+        - Applies only when C(create_method=custom).
+        - Compared against the existing task sequence description during idempotency checks.
+      type: str
+      required: false
+    boot_image_package_id:
+      description:
+        - The package ID of the boot image to associate with the task sequence.
+        - Applies only when C(create_method=custom).
+        - Compared against C($ts.BootImageID) during idempotency checks.
+        - "Example: C(ECO00001)"
+      type: str
+      required: false
+    package_id:
+      description:
+        - The package ID of the task sequence to remove.
+        - Required when C(state=absent).
+        - Using the package ID rather than name avoids accidental deletion when multiple
+          task sequences share the same name.
+        - "Example: C(ECO000B6)"
+      type: str
+      required: false
+  author:
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
+
+EXAMPLES: |
+  - name: Import a task sequence from a zip file
+    microsoft.mecm.task_sequence:
+      site_code: "ECO"
+      create_method: import
+      import_path: "\\\\WIN-UE71298AH9B\\installers for sccm\\TaskSequenceCustom.zip"
+      state: present
+
+  - name: Create a custom task sequence
+    microsoft.mecm.task_sequence:
+      site_code: "ECO"
+      create_method: custom
+      name: "Deploy Windows 11"
+      description: "Bare-metal Windows 11 deployment sequence"
+      boot_image_package_id: "ECO00002"
+      state: present
+
+  - name: Update the description of an existing custom task sequence
+    microsoft.mecm.task_sequence:
+      site_code: "ECO"
+      create_method: custom
+      name: "Deploy Windows 11"
+      description: "Updated bare-metal Windows 11 deployment sequence"
+      state: present
+
+  - name: Remove a task sequence by package ID
+    microsoft.mecm.task_sequence:
+      site_code: "ECO"
+      package_id: "ECO000B6"
+      state: absent
+
+RETURN:
+  task_sequence:
+    description: State of the task sequence after the operation.
+    returned: create_method=custom, or state=absent
+    type: dict
+    contains:
+      name:
+        description: Name of the task sequence.
+        type: str
+        returned: always
+        sample: "Deploy Windows 11"
+      package_id:
+        description:
+          - Package ID of the task sequence.
+        type: str
+        returned: when not in check mode
+        sample: "ECO000B6"
+      description:
+        description: Description of the task sequence.
+        type: str
+        returned: always
+        sample: "Bare-metal Windows 11 deployment sequence"
+      boot_image_id:
+        description: Package ID of the associated boot image.
+        type: str
+        returned: always
+        sample: "ECO00002"

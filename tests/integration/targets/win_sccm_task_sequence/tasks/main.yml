@@ -1,0 +1,429 @@
+---
+# Integration tests for task_sequence and task_sequence_info modules
+
+- name: Set test variables
+  ansible.builtin.set_fact:
+    test_ts_custom_name: "{{ unique_test_id }}-ts-custom"
+    test_ts_import_name: "TaskSequenceCustom"
+
+- name: Task sequence lifecycle tests
+  block:
+
+    # ================================================================
+    # PARAMETER VALIDATION
+    # ================================================================
+
+    - name: Fail - package_id cannot be set with state present
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: custom
+        name: "{{ test_ts_custom_name }}"
+        package_id: "ECO000B6"
+      register: _invalid_package_id
+      ignore_errors: true
+
+    - name: Assert package_id with state present is rejected
+      ansible.builtin.assert:
+        that:
+          - _invalid_package_id is failed
+          - "'package_id' in _invalid_package_id.msg"
+          - "'state: absent' in _invalid_package_id.msg"
+
+    - name: Fail - name cannot be set with method import
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: import
+        import_path: "{{ test_import_path }}"
+        name: "should-fail"
+      register: _invalid_name_with_import
+      ignore_errors: true
+
+    - name: Assert name with method import is rejected
+      ansible.builtin.assert:
+        that:
+          - _invalid_name_with_import is failed
+          - "'name' in _invalid_name_with_import.msg"
+          - "'create_method: custom' in _invalid_name_with_import.msg"
+
+    - name: Fail - import_path cannot be set with method custom
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: custom
+        name: "{{ test_ts_custom_name }}"
+        import_path: "\\\\server\\share\\file.zip"
+      register: _invalid_import_path_with_custom
+      ignore_errors: true
+
+    - name: Assert import_path with method custom is rejected
+      ansible.builtin.assert:
+        that:
+          - _invalid_import_path_with_custom is failed
+          - "'import_path' in _invalid_import_path_with_custom.msg"
+          - "'create_method: import' in _invalid_import_path_with_custom.msg"
+
+    - name: Fail - name cannot be set with state absent
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: absent
+        name: "{{ test_ts_custom_name }}"
+        package_id: "ECO000B6"
+      register: _invalid_name_with_absent
+      ignore_errors: true
+
+    - name: Assert name with state absent is rejected
+      ansible.builtin.assert:
+        that:
+          - _invalid_name_with_absent is failed
+          - "'name' in _invalid_name_with_absent.msg"
+          - "'state: absent' in _invalid_name_with_absent.msg"
+
+    - name: Fail - invalid boot image id reports clear error
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: custom
+        name: "{{ test_ts_custom_name }}"
+        boot_image_package_id: "{{ test_boot_image_invalid }}"
+      register: _invalid_boot_image
+      ignore_errors: true
+
+    - name: Assert invalid boot image fails with clear message
+      ansible.builtin.assert:
+        that:
+          - _invalid_boot_image is failed
+          - "test_boot_image_invalid in _invalid_boot_image.msg"
+          - "'does not exist in site' in _invalid_boot_image.msg"
+
+    # ================================================================
+    # METHOD: IMPORT
+    # ================================================================
+
+    - name: Import TS - check mode (always reports changed)
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: import
+        import_path: "{{ test_import_path }}"
+      check_mode: true
+      register: _import_check
+
+    - name: Assert import check mode reports changed true
+      ansible.builtin.assert:
+        that:
+          - _import_check is changed
+
+    - name: Import TS - actual
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: import
+        import_path: "{{ test_import_path }}"
+      register: _import
+
+    - name: Import TS - second run (Overwrite - always changed)
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: import
+        import_path: "{{ test_import_path }}"
+      register: _import_again
+
+    - name: Assert import always reports changed
+      ansible.builtin.assert:
+        that:
+          - _import is changed
+          - _import_again is changed
+
+    - name: Fail - import with non-existent zip path
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: import
+        import_path: "\\\\WIN-UE71298AH9B\\installers for sccm\\NonExistent.zip"
+      register: _import_bad_path
+      ignore_errors: true
+
+    - name: Assert missing zip path fails with clear message
+      ansible.builtin.assert:
+        that:
+          - _import_bad_path is failed
+          - "'does not exist or could not be found' in _import_bad_path.msg"
+
+    # ================================================================
+    # METHOD: CUSTOM - CREATE
+    # ================================================================
+
+    - name: Create custom TS - check mode
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: custom
+        name: "{{ test_ts_custom_name }}"
+        description: "Integration test task sequence"
+        boot_image_package_id: "{{ test_boot_image_1 }}"
+      check_mode: true
+      register: _create_custom_check
+
+    - name: Verify TS does not exist after check mode create
+      microsoft.mecm.task_sequence_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_ts_custom_name }}"
+      register: _info_after_create_check
+
+    - name: Assert check mode create reported change and made no real change
+      ansible.builtin.assert:
+        that:
+          - _create_custom_check is changed
+          - _create_custom_check.task_sequence.name == test_ts_custom_name
+          - _info_after_create_check.task_sequences | length == 0
+
+    - name: Create custom TS - actual
+      microsoft.mecm.task_sequence: &create_custom
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: custom
+        name: "{{ test_ts_custom_name }}"
+        description: "Integration test task sequence"
+        boot_image_package_id: "{{ test_boot_image_1 }}"
+      register: _create_custom
+
+    - name: Create custom TS - idempotency
+      microsoft.mecm.task_sequence: *create_custom
+      register: _create_custom_idempotent
+
+    - name: Get TS info after creation
+      microsoft.mecm.task_sequence_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_ts_custom_name }}"
+      register: _info_after_create
+
+    - name: Assert creation, idempotency, and info values
+      ansible.builtin.assert:
+        that:
+          - _create_custom is changed
+          - _create_custom_idempotent is not changed
+          - _info_after_create.task_sequences | length == 1
+          - _info_after_create.task_sequences[0].name == test_ts_custom_name
+          - _info_after_create.task_sequences[0].description == "Integration test task sequence"
+          - _info_after_create.task_sequences[0].package_id is defined
+          - _info_after_create.task_sequences[0].ts_enabled is defined
+
+    # ================================================================
+    # METHOD: CUSTOM - UPDATE DESCRIPTION
+    # ================================================================
+
+    - name: Update TS description - check mode
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: custom
+        name: "{{ test_ts_custom_name }}"
+        description: "Updated description"
+      check_mode: true
+      register: _update_desc_check
+
+    - name: Get TS info after check mode description update
+      microsoft.mecm.task_sequence_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_ts_custom_name }}"
+      register: _info_after_desc_check
+
+    - name: Assert check mode description update made no real change
+      ansible.builtin.assert:
+        that:
+          - _update_desc_check is changed
+          - _info_after_desc_check.task_sequences[0].description == "Integration test task sequence"
+
+    - name: Update TS description - actual
+      microsoft.mecm.task_sequence: &update_desc
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: custom
+        name: "{{ test_ts_custom_name }}"
+        description: "Updated description"
+      register: _update_desc
+
+    - name: Update TS description - idempotency
+      microsoft.mecm.task_sequence: *update_desc
+      register: _update_desc_idempotent
+
+    - name: Get TS info after description update
+      microsoft.mecm.task_sequence_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_ts_custom_name }}"
+      register: _info_after_desc_update
+
+    - name: Assert description updated correctly and idempotent
+      ansible.builtin.assert:
+        that:
+          - _update_desc is changed
+          - _update_desc_idempotent is not changed
+          - _info_after_desc_update.task_sequences[0].description == "Updated description"
+
+    # ================================================================
+    # METHOD: CUSTOM - UPDATE BOOT IMAGE
+    # ================================================================
+
+    - name: Update TS boot image - check mode
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: custom
+        name: "{{ test_ts_custom_name }}"
+        boot_image_package_id: "{{ test_boot_image_2 }}"
+      check_mode: true
+      register: _update_boot_check
+
+    - name: Get TS info after check mode boot image update
+      microsoft.mecm.task_sequence_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_ts_custom_name }}"
+      register: _info_after_boot_check
+
+    - name: Assert check mode boot image update made no real change
+      ansible.builtin.assert:
+        that:
+          - _update_boot_check is changed
+          - _info_after_boot_check.task_sequences[0].boot_image_id == test_boot_image_1
+
+    - name: Update TS boot image - actual
+      microsoft.mecm.task_sequence: &update_boot
+        site_code: "{{ test_site_code }}"
+        state: present
+        create_method: custom
+        name: "{{ test_ts_custom_name }}"
+        boot_image_package_id: "{{ test_boot_image_2 }}"
+      register: _update_boot
+
+    - name: Update TS boot image - idempotency
+      microsoft.mecm.task_sequence: *update_boot
+      register: _update_boot_idempotent
+
+    - name: Get TS info after boot image update
+      microsoft.mecm.task_sequence_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_ts_custom_name }}"
+      register: _info_after_boot_update
+
+    - name: Assert boot image updated correctly and idempotent
+      ansible.builtin.assert:
+        that:
+          - _update_boot is changed
+          - _update_boot_idempotent is not changed
+          - _info_after_boot_update.task_sequences[0].boot_image_id == test_boot_image_2
+
+    # ================================================================
+    # INFO MODULE - all TS and single TS
+    # ================================================================
+
+    - name: Get all task sequences (system-wide)
+      microsoft.mecm.task_sequence_info:
+        site_code: "{{ test_site_code }}"
+      register: _info_all
+
+    - name: Assert all TS info returns list containing the test TS
+      ansible.builtin.assert:
+        that:
+          - _info_all.task_sequences | length >= 1
+          - _info_all.task_sequences | selectattr('name', 'equalto', test_ts_custom_name) | list | length == 1
+
+    - name: Get single TS by name
+      microsoft.mecm.task_sequence_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_ts_custom_name }}"
+      register: _info_single
+
+    - name: Assert single TS info returns correct fields
+      ansible.builtin.assert:
+        that:
+          - _info_single.task_sequences | length == 1
+          - _info_single.task_sequences[0].name == test_ts_custom_name
+          - _info_single.task_sequences[0].package_id is defined
+          - _info_single.task_sequences[0].description is defined
+          - _info_single.task_sequences[0].boot_image_id is defined
+          - _info_single.task_sequences[0].ts_enabled is defined
+
+    - name: Get info for non-existent TS - should warn and return empty list
+      microsoft.mecm.task_sequence_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_ts_custom_name }}-nonexistent"
+      register: _info_nonexistent
+
+    - name: Assert non-existent TS returns empty list with warning
+      ansible.builtin.assert:
+        that:
+          - _info_nonexistent.task_sequences | length == 0
+          - _info_nonexistent.warnings | length > 0
+
+    # ================================================================
+    # DELETE - store package_id from info for absent operations
+    # ================================================================
+
+    - name: Store package_id for deletion
+      ansible.builtin.set_fact:
+        test_ts_package_id: "{{ _info_single.task_sequences[0].package_id }}"
+
+    - name: Delete custom TS - check mode
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: absent
+        package_id: "{{ test_ts_package_id }}"
+      check_mode: true
+      register: _delete_check
+
+    - name: Verify TS still exists after check mode delete
+      microsoft.mecm.task_sequence_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_ts_custom_name }}"
+      register: _info_after_delete_check
+
+    - name: Assert check mode delete reported change and made no real change
+      ansible.builtin.assert:
+        that:
+          - _delete_check is changed
+          - _info_after_delete_check.task_sequences | length == 1
+
+    - name: Delete custom TS - actual
+      microsoft.mecm.task_sequence: &delete_ts
+        site_code: "{{ test_site_code }}"
+        state: absent
+        package_id: "{{ test_ts_package_id }}"
+      register: _delete
+
+    - name: Delete custom TS - idempotency
+      microsoft.mecm.task_sequence: *delete_ts
+      register: _delete_idempotent
+
+    - name: Verify TS no longer exists
+      microsoft.mecm.task_sequence_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_ts_custom_name }}"
+      register: _info_after_delete
+
+    - name: Assert deletion and idempotency
+      ansible.builtin.assert:
+        that:
+          - _delete is changed
+          - _delete_idempotent is not changed
+          - _info_after_delete.task_sequences | length == 0
+
+  always:
+    - name: Cleanup - get package_id of custom test TS if it exists
+      microsoft.mecm.task_sequence_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_ts_custom_name }}"
+      register: _cleanup_info
+      ignore_errors: true
+
+    - name: Cleanup - remove custom test TS if it exists
+      microsoft.mecm.task_sequence:
+        site_code: "{{ test_site_code }}"
+        state: absent
+        package_id: "{{ _cleanup_info.task_sequences[0].package_id }}"
+      when:
+        - _cleanup_info is not failed
+        - _cleanup_info.task_sequences | length == 1
+      ignore_errors: true

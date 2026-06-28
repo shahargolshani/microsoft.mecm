@@ -1,0 +1,6 @@
+---
+test_site_code: "ECO"
+test_import_path: "\\\\WIN-UE71298AH9B\\installers for sccm\\TaskSequenceCustom.zip"
+test_boot_image_1: "ECO00002"
+test_boot_image_2: "ECO0000A"
+test_boot_image_invalid: "ECO00001"
