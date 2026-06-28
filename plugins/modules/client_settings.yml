@@ -1,0 +1,218 @@
+---
+# Copyright: (c) 2025, Ansible Project
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+DOCUMENTATION:
+  module: client_settings
+  short_description: Create, update, or delete client settings in Microsoft Endpoint Configuration Manager (MECM)
+  description:
+    - This module creates, updates, or deletes client settings in a Configuration Manager site.
+    - O(description) and O(priority) can be modified on an existing client setting.
+    - O(custom_device_settings) and O(custom_user_settings) define which setting categories are active and are
+      fully idempotent — the module reconciles the system state to match exactly what is declared.
+    - For more information, see
+      U(https://learn.microsoft.com/en-us/powershell/module/configurationmanager/new-cmclientsetting).
+  version_added: "1.1.0"
+  extends_documentation_fragment:
+    - microsoft.mecm.uses_cm_ps_module
+  options:
+    name:
+      description:
+        - The name of the client setting to create or manage.
+        - Used as the unique identifier for idempotency checks.
+      type: str
+      required: true
+    type:
+      description:
+        - The type of client setting to create.
+        - V(device) - a custom client setting targeting device (computer) collections.
+        - V(user) - a custom client setting targeting user collections.
+        - The type cannot be changed after the client setting is created.
+      type: str
+      required: true
+      choices:
+        - device
+        - user
+    description:
+      description:
+        - An administrator comment for the client setting.
+        - Can be updated after initial creation.
+      type: str
+      required: false
+    priority:
+      description:
+        - The deployment priority of the client setting.
+        - Accepted values are integers between C(0) and C(1000000000).
+        - Lower numeric values indicate higher priority.
+        - Can be updated after initial creation.
+      type: int
+      required: false
+    custom_device_settings:
+      description:
+        - List of custom setting categories to enable on a V(device) type client setting.
+        - Only valid when O(type) is V(device).
+        - All 22 device setting categories are available.
+        - The list is idempotent — categories present in the system but absent from this list will be removed,
+          and categories in this list but absent from the system will be added.
+        - >-
+          B(Omitting this parameter) leaves the existing custom settings unchanged.
+          This is equivalent to passing C(system) as the sole value.
+        - >-
+          B(Passing V(system) alone) (C([system]) or omitting the parameter entirely) means
+          "leave the current custom settings untouched". No changes will be made.
+          V(system) cannot be combined with other choices — doing so raises an error.
+        - >-
+          B(Passing an empty list) C([]) explicitly removes all existing custom device settings.
+      type: list
+      elements: str
+      required: false
+      default: [system]
+      choices:
+        - system
+        - BackgroundIntelligentTransfer
+        - ClientCache
+        - ClientPolicy
+        - CloudService
+        - ComplianceSettings
+        - ComputerAgent
+        - ComputerRestart
+        - DeliveryOptimization
+        - EndpointProtection
+        - Enrollment
+        - HardwareInventory
+        - MeteredInternetConnection
+        - PowerManagement
+        - RemoteTools
+        - SoftwareCenter
+        - SoftwareDeployment
+        - SoftwareInventory
+        - SoftwareMetering
+        - SoftwareUpdate
+        - StateMessaging
+        - UserAndDeviceAffinity
+        - WindowsAnalytics
+    custom_user_settings:
+      description:
+        - List of custom setting categories to enable on a V(user) type client setting.
+        - Only valid when O(type) is V(user).
+        - The list is idempotent — categories present in the system but absent from this list will be removed,
+          and categories in this list but absent from the system will be added.
+        - >-
+          B(Omitting this parameter) leaves the existing custom settings unchanged.
+          This is equivalent to passing C(system) as the sole value.
+        - >-
+          B(Passing V(system) alone) (C([system]) or omitting the parameter entirely) means
+          "leave the current custom settings untouched". No changes will be made.
+          V(system) cannot be combined with other choices — doing so raises an error.
+        - >-
+          B(Passing an empty list) C([]) explicitly removes all existing custom user settings.
+      type: list
+      elements: str
+      required: false
+      default: [system]
+      choices:
+        - system
+        - CloudService
+        - Enrollment
+        - UserAndDeviceAffinity
+    state:
+      description:
+        - Whether the client setting should be V(present) or V(absent).
+        - When V(absent), the client setting is removed if it exists.
+      type: str
+      choices:
+        - present
+        - absent
+      default: present
+  notes:
+    - The O(type) parameter cannot be changed after the client setting is created.
+    - O(custom_device_settings) and O(custom_user_settings) are mutually exclusive with each other's type
+      O(custom_device_settings) requires O(type=device) and O(custom_user_settings) requires O(type=user).
+    - This module supports idempotency and check mode.
+    - "B(Permissions): Requires administrative access to create, update, and delete MECM client settings."
+  author:
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
+
+EXAMPLES: |
+  - name: Create the PS drive for the site
+    microsoft.mecm.site_ps_drive:
+      site_code: XYZ
+      state: present
+
+  - name: Create a device client setting
+    microsoft.mecm.client_settings:
+      site_code: "XYZ"
+      name: "Custom Device Settings"
+      type: device
+      description: "Custom device settings managed by Ansible"
+      priority: 10
+      state: present
+
+  - name: Create a device client setting with custom setting categories
+    microsoft.mecm.client_settings:
+      site_code: "XYZ"
+      name: "Custom Device Settings"
+      type: device
+      description: "Device settings with software and hardware inventory"
+      priority: 10
+      custom_device_settings:
+        - HardwareInventory
+        - SoftwareInventory
+        - SoftwareUpdate
+        - ClientPolicy
+      state: present
+
+  - name: Create a user client setting with all available user categories
+    microsoft.mecm.client_settings:
+      site_code: "XYZ"
+      name: "Custom User Settings"
+      type: user
+      description: "User settings managed by Ansible"
+      priority: 20
+      custom_user_settings:
+        - CloudService
+        - Enrollment
+        - UserAndDeviceAffinity
+      state: present
+
+  - name: Remove all custom device setting categories
+    microsoft.mecm.client_settings:
+      site_code: "XYZ"
+      name: "Custom Device Settings"
+      type: device
+      custom_device_settings: []
+      state: present
+
+  - name: Remove a client setting
+    microsoft.mecm.client_settings:
+      site_code: "XYZ"
+      name: "Custom Device Settings"
+      type: device
+      state: absent
+
+  - name: Verify what would change without applying (check mode)
+    microsoft.mecm.client_settings:
+      site_code: "XYZ"
+      name: "Custom Device Settings"
+      type: device
+      description: "New description"
+      priority: 15
+      custom_device_settings:
+        - HardwareInventory
+        - SoftwareUpdate
+      state: present
+    check_mode: true
+
+RETURN:
+  client_setting:
+    description: Information about the client setting that was created, updated, or removed.
+    returned: on success
+    type: dict
+    sample: |-
+      {
+        "name": "Custom Device Settings",
+        "description": "Custom device settings managed by Ansible",
+        "type": "device",
+        "priority": 10,
+        "settings_id": "16777217"
+      }

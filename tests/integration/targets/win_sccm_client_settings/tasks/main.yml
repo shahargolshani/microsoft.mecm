@@ -1,0 +1,706 @@
+---
+# Integration tests for client_settings and client_settings_info modules.
+#
+# Test structure:
+#   Section  0  — Validation: invalid parameter combinations are rejected
+#   Section  1  — Device setting: create (check mode, actual, idempotency)
+#   Section  2  — Device setting: update priority (check mode, actual, idempotency)
+#   Section  3  — Device setting: update description (check mode, actual, idempotency)
+#   Section  4  — Device setting: custom_device_settings add (check mode, actual, idempotency)
+#   Section  5  — Device setting: custom_device_settings change (swap, idempotency)
+#   Section  6  — Device setting: custom_device_settings omit (leave unchanged)
+#   Section  7  — Device setting: custom_device_settings clear with [] (check mode, actual, idempotency)
+#   Section  8  — Device setting: type change emits warning
+#   Section  9  — User setting: create (actual, idempotency)
+#   Section 10  — User setting: custom_user_settings add CloudService (actual, idempotency)
+#   Section 11  — User setting: custom_user_settings change (swap, idempotency)
+#   Section 12  — User setting: custom_user_settings omit (leave unchanged)
+#   Section 13  — User setting: custom_user_settings clear with [] (actual, idempotency)
+#   Section 14  — User setting: type change emits warning
+#   Section 15  — Info module: system-wide (all) and by name
+#   Section 16  — Delete device setting (check mode, actual, idempotency)
+#   Section 17  — Delete user setting (check mode, actual, idempotency)
+
+- name: Set test variables
+  ansible.builtin.set_fact:
+    test_device_name: "{{ unique_test_id }}-cs-device"
+    test_user_name: "{{ unique_test_id }}-cs-user"
+
+- name: Test client settings lifecycle
+  block:
+
+    # ==========================================================
+    # SECTION 0 — Validation: invalid parameter combinations
+    # ==========================================================
+
+    - name: (Validation) custom_user_settings with type device - should fail
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}-invalid"
+        type: device
+        custom_user_settings:
+          - CloudService
+        state: present
+      register: _invalid_cus_on_device
+      ignore_errors: true
+
+    - name: Assert custom_user_settings rejected for type device
+      ansible.builtin.assert:
+        that:
+          - _invalid_cus_on_device is failed
+          - "'custom_user_settings' in _invalid_cus_on_device.msg"
+          - "'user' in _invalid_cus_on_device.msg"
+
+    - name: (Validation) custom_device_settings with type user - should fail
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}-invalid"
+        type: user
+        custom_device_settings:
+          - ClientPolicy
+        state: present
+      register: _invalid_cds_on_user
+      ignore_errors: true
+
+    - name: Assert custom_device_settings rejected for type user
+      ansible.builtin.assert:
+        that:
+          - _invalid_cds_on_user is failed
+          - "'custom_device_settings' in _invalid_cds_on_user.msg"
+          - "'device' in _invalid_cds_on_user.msg"
+
+    - name: (Validation) system mixed with another choice in custom_user_settings - should fail
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}-invalid"
+        type: user
+        custom_user_settings:
+          - system
+          - CloudService
+        state: present
+      register: _invalid_system_mixed_user
+      ignore_errors: true
+
+    - name: Assert system cannot be combined with other choices in custom_user_settings
+      ansible.builtin.assert:
+        that:
+          - _invalid_system_mixed_user is failed
+          - "'system' in _invalid_system_mixed_user.msg"
+          - "'cannot be combined' in _invalid_system_mixed_user.msg"
+
+    - name: (Validation) system mixed with another choice in custom_device_settings - should fail
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}-invalid"
+        type: device
+        custom_device_settings:
+          - system
+          - ClientPolicy
+        state: present
+      register: _invalid_system_mixed_device
+      ignore_errors: true
+
+    - name: Assert system cannot be combined with other choices in custom_device_settings
+      ansible.builtin.assert:
+        that:
+          - _invalid_system_mixed_device is failed
+          - "'system' in _invalid_system_mixed_device.msg"
+          - "'cannot be combined' in _invalid_system_mixed_device.msg"
+
+    # ==========================================================
+    # SECTION 1 — Device setting: create (check mode, actual, idempotency)
+    # ==========================================================
+
+    - name: (Device) Create client setting - check mode
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        description: "Integration test device client setting"
+        state: present
+      check_mode: true
+      register: _device_create_check
+
+    - name: (Device) Verify setting does not exist after check mode create
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+      register: _info_after_device_create_check
+
+    - name: Assert check mode create reported change and made no real change
+      ansible.builtin.assert:
+        that:
+          - _device_create_check is changed
+          - _info_after_device_create_check.client_settings | length == 0
+
+    - name: (Device) Create client setting
+      microsoft.mecm.client_settings: &create_device
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        description: "Integration test device client setting"
+        state: present
+      register: _device_create
+
+    - name: (Device) Create client setting - idempotency
+      microsoft.mecm.client_settings: *create_device
+      register: _device_create_idempotent
+
+    - name: (Device) Get info after creation
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+      register: _info_device_created
+
+    - name: Assert device setting created, idempotent, and info values correct
+      ansible.builtin.assert:
+        that:
+          - _device_create is changed
+          - _device_create_idempotent is not changed
+          - _device_create.client_setting.name == test_device_name
+          - _device_create.client_setting.type == 'device'
+          - _device_create.client_setting.description == 'Integration test device client setting'
+          - _device_create.client_setting.settings_id is defined
+          - _info_device_created.client_settings | length == 1
+          - _info_device_created.client_settings[0].name == test_device_name
+          - _info_device_created.client_settings[0].type == 'device'
+          - _info_device_created.client_settings[0].description == 'Integration test device client setting'
+          - _info_device_created.client_settings[0].settings_id is defined
+          - _info_device_created.client_settings[0].priority is defined
+
+    # ==========================================================
+    # SECTION 2 — Device setting: update priority
+    # ==========================================================
+
+    - name: (Device) Update priority - check mode
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        priority: 100
+      check_mode: true
+      register: _device_priority_check
+
+    - name: Assert priority check mode reported change
+      ansible.builtin.assert:
+        that:
+          - _device_priority_check is changed
+
+    - name: (Device) Update priority
+      microsoft.mecm.client_settings: &update_device_priority
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        priority: 100
+      register: _device_priority_update
+
+    - name: (Device) Update priority - idempotency
+      microsoft.mecm.client_settings: *update_device_priority
+      register: _device_priority_idempotent
+
+    - name: (Device) Get info after priority update
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+      register: _info_device_priority
+
+    - name: Assert priority updated, idempotent, and info reflects new value
+      ansible.builtin.assert:
+        that:
+          - _device_priority_update is changed
+          - _device_priority_idempotent is not changed
+          - _info_device_priority.client_settings[0].priority == 100
+
+    # ==========================================================
+    # SECTION 3 — Device setting: update description
+    # ==========================================================
+
+    - name: (Device) Update description - check mode
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        description: "Updated device description"
+      check_mode: true
+      register: _device_desc_check
+
+    - name: (Device) Get info after description check mode
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+      register: _info_after_desc_check
+
+    - name: Assert description check mode reported change but did not apply it
+      ansible.builtin.assert:
+        that:
+          - _device_desc_check is changed
+          - _info_after_desc_check.client_settings[0].description == 'Integration test device client setting'
+
+    - name: (Device) Update description
+      microsoft.mecm.client_settings: &update_device_desc
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        description: "Updated device description"
+      register: _device_desc_update
+
+    - name: (Device) Update description - idempotency
+      microsoft.mecm.client_settings: *update_device_desc
+      register: _device_desc_idempotent
+
+    - name: (Device) Get info after description update
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+      register: _info_device_desc
+
+    - name: Assert description updated, idempotent, and info reflects new value
+      ansible.builtin.assert:
+        that:
+          - _device_desc_update is changed
+          - _device_desc_idempotent is not changed
+          - _info_device_desc.client_settings[0].description == 'Updated device description'
+
+    # ==========================================================
+    # SECTION 4 — Device setting: custom_device_settings add
+    # ==========================================================
+
+    - name: (Device) Add custom settings ClientPolicy and CloudService - check mode
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        custom_device_settings:
+          - ClientPolicy
+          - CloudService
+      check_mode: true
+      register: _device_cds_add_check
+
+    - name: Assert custom settings add check mode reported change
+      ansible.builtin.assert:
+        that:
+          - _device_cds_add_check is changed
+
+    - name: (Device) Add custom settings ClientPolicy and CloudService
+      microsoft.mecm.client_settings: &add_device_cds
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        custom_device_settings:
+          - ClientPolicy
+          - CloudService
+      register: _device_cds_add
+
+    - name: (Device) Add custom settings - idempotency
+      microsoft.mecm.client_settings: *add_device_cds
+      register: _device_cds_add_idempotent
+
+    - name: Assert custom settings added and idempotent
+      ansible.builtin.assert:
+        that:
+          - _device_cds_add is changed
+          - _device_cds_add_idempotent is not changed
+
+    # ==========================================================
+    # SECTION 5 — Device setting: custom_device_settings change (swap)
+    # ==========================================================
+
+    - name: (Device) Swap custom settings to Enrollment and HardwareInventory
+      microsoft.mecm.client_settings: &swap_device_cds
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        custom_device_settings:
+          - Enrollment
+          - HardwareInventory
+      register: _device_cds_swap
+
+    - name: (Device) Swap custom settings - idempotency
+      microsoft.mecm.client_settings: *swap_device_cds
+      register: _device_cds_swap_idempotent
+
+    - name: Assert custom settings swapped and idempotent
+      ansible.builtin.assert:
+        that:
+          - _device_cds_swap is changed
+          - _device_cds_swap_idempotent is not changed
+
+    # ==========================================================
+    # SECTION 6 — Device setting: custom_device_settings omit (leave unchanged)
+    # ==========================================================
+
+    - name: (Device) Run with no custom_device_settings - should leave existing settings unchanged
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        description: "Updated device description"
+        priority: 100
+      register: _device_cds_omit
+
+    - name: Assert omitting custom_device_settings does not change anything
+      ansible.builtin.assert:
+        that:
+          - _device_cds_omit is not changed
+
+    # ==========================================================
+    # SECTION 7 — Device setting: custom_device_settings clear with []
+    # ==========================================================
+
+    - name: (Device) Clear all custom settings with [] - check mode
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        custom_device_settings: []
+      check_mode: true
+      register: _device_cds_clear_check
+
+    - name: Assert clear check mode reported change
+      ansible.builtin.assert:
+        that:
+          - _device_cds_clear_check is changed
+
+    - name: (Device) Clear all custom settings with []
+      microsoft.mecm.client_settings: &clear_device_cds
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        custom_device_settings: []
+      register: _device_cds_clear
+
+    - name: (Device) Clear all custom settings with [] - idempotency
+      microsoft.mecm.client_settings: *clear_device_cds
+      register: _device_cds_clear_idempotent
+
+    - name: Assert custom settings cleared and second run is idempotent
+      ansible.builtin.assert:
+        that:
+          - _device_cds_clear is changed
+          - _device_cds_clear_idempotent is not changed
+
+    # ==========================================================
+    # SECTION 8 — Device setting: type change emits warning, no change
+    # ==========================================================
+
+    - name: (Device) Attempt to change type from device to user - should warn, not change
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: user
+      register: _device_type_warn
+
+    - name: Assert type change warning issued and setting was not modified
+      ansible.builtin.assert:
+        that:
+          - _device_type_warn is not changed
+          - _device_type_warn.warnings | length > 0
+          - "'cannot be changed' in (_device_type_warn.warnings | join(' '))"
+          - "'device' in (_device_type_warn.warnings | join(' '))"
+
+    # ==========================================================
+    # SECTION 9 — User setting: create
+    # ==========================================================
+
+    - name: (User) Create client setting
+      microsoft.mecm.client_settings: &create_user
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+        type: user
+        description: "Integration test user client setting"
+        priority: 200
+        state: present
+      register: _user_create
+
+    - name: (User) Create client setting - idempotency
+      microsoft.mecm.client_settings: *create_user
+      register: _user_create_idempotent
+
+    - name: (User) Get info after creation
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+      register: _info_user_created
+
+    - name: Assert user setting created, idempotent, and info values correct
+      ansible.builtin.assert:
+        that:
+          - _user_create is changed
+          - _user_create_idempotent is not changed
+          - _user_create.client_setting.name == test_user_name
+          - _user_create.client_setting.type == 'user'
+          - _user_create.client_setting.description == 'Integration test user client setting'
+          - _user_create.client_setting.priority == 200
+          - _info_user_created.client_settings | length == 1
+          - _info_user_created.client_settings[0].name == test_user_name
+          - _info_user_created.client_settings[0].type == 'user'
+          - _info_user_created.client_settings[0].description == 'Integration test user client setting'
+          - _info_user_created.client_settings[0].priority == 200
+
+    # ==========================================================
+    # SECTION 10 — User setting: custom_user_settings add CloudService
+    # ==========================================================
+
+    - name: (User) Add custom user setting CloudService
+      microsoft.mecm.client_settings: &add_user_cus_cloud
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+        type: user
+        custom_user_settings:
+          - CloudService
+      register: _user_cus_cloud_add
+
+    - name: (User) Add CloudService - idempotency
+      microsoft.mecm.client_settings: *add_user_cus_cloud
+      register: _user_cus_cloud_idempotent
+
+    - name: Assert CloudService added and idempotent
+      ansible.builtin.assert:
+        that:
+          - _user_cus_cloud_add is changed
+          - _user_cus_cloud_idempotent is not changed
+
+    # ==========================================================
+    # SECTION 11 — User setting: custom_user_settings change (swap)
+    # ==========================================================
+
+    - name: (User) Swap custom user settings to Enrollment and UserAndDeviceAffinity
+      microsoft.mecm.client_settings: &swap_user_cus
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+        type: user
+        custom_user_settings:
+          - Enrollment
+          - UserAndDeviceAffinity
+      register: _user_cus_swap
+
+    - name: (User) Swap custom user settings - idempotency
+      microsoft.mecm.client_settings: *swap_user_cus
+      register: _user_cus_swap_idempotent
+
+    - name: Assert custom user settings swapped and idempotent
+      ansible.builtin.assert:
+        that:
+          - _user_cus_swap is changed
+          - _user_cus_swap_idempotent is not changed
+
+    # ==========================================================
+    # SECTION 12 — User setting: custom_user_settings omit (leave unchanged)
+    # ==========================================================
+
+    - name: (User) Run without custom_user_settings - should leave existing settings unchanged
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+        type: user
+        description: "Integration test user client setting"
+        priority: 200
+      register: _user_cus_omit
+
+    - name: Assert omitting custom_user_settings does not change anything
+      ansible.builtin.assert:
+        that:
+          - _user_cus_omit is not changed
+
+    # ==========================================================
+    # SECTION 13 — User setting: custom_user_settings clear with []
+    # ==========================================================
+
+    - name: (User) Clear all custom user settings with []
+      microsoft.mecm.client_settings: &clear_user_cus
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+        type: user
+        custom_user_settings: []
+      register: _user_cus_clear
+
+    - name: (User) Clear all custom user settings with [] - idempotency
+      microsoft.mecm.client_settings: *clear_user_cus
+      register: _user_cus_clear_idempotent
+
+    - name: Assert custom user settings cleared and second run is idempotent
+      ansible.builtin.assert:
+        that:
+          - _user_cus_clear is changed
+          - _user_cus_clear_idempotent is not changed
+
+    # ==========================================================
+    # SECTION 14 — User setting: type change emits warning, no change
+    # ==========================================================
+
+    - name: (User) Attempt to change type from user to device - should warn, not change
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+        type: device
+      register: _user_type_warn
+
+    - name: Assert type change warning issued and setting was not modified
+      ansible.builtin.assert:
+        that:
+          - _user_type_warn is not changed
+          - _user_type_warn.warnings | length > 0
+          - "'cannot be changed' in (_user_type_warn.warnings | join(' '))"
+          - "'user' in (_user_type_warn.warnings | join(' '))"
+
+    # ==========================================================
+    # SECTION 15 — Info module: system-wide (all) and by name
+    # The CI environment may have pre-existing client settings, so
+    # system-wide assertions use >= and selectattr rather than exact counts.
+    # ==========================================================
+
+    - name: (Info) Get all client settings system-wide
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+      register: _info_all
+
+    - name: (Info) Get device setting by name
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+      register: _info_device_by_name
+
+    - name: (Info) Get user setting by name
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+      register: _info_user_by_name
+
+    - name: Assert info module returns correct results
+      ansible.builtin.assert:
+        that:
+          # System-wide: includes the read-only Default Client Settings plus both test settings
+          - _info_all.client_settings | length >= 3
+          - _info_all.client_settings | selectattr('name', 'equalto', test_device_name) | list | length == 1
+          - _info_all.client_settings | selectattr('name', 'equalto', test_user_name) | list | length == 1
+          - _info_all.client_settings | selectattr('type', 'equalto', 'default') | list | length >= 1
+          # By-name: device setting
+          - _info_device_by_name.client_settings | length == 1
+          - _info_device_by_name.client_settings[0].name == test_device_name
+          - _info_device_by_name.client_settings[0].type == 'device'
+          - _info_device_by_name.client_settings[0].priority == 100
+          - _info_device_by_name.client_settings[0].description == 'Updated device description'
+          - _info_device_by_name.client_settings[0].settings_id is defined
+          # By-name: user setting
+          - _info_user_by_name.client_settings | length == 1
+          - _info_user_by_name.client_settings[0].name == test_user_name
+          - _info_user_by_name.client_settings[0].type == 'user'
+          - _info_user_by_name.client_settings[0].priority == 200
+          - _info_user_by_name.client_settings[0].description == 'Integration test user client setting'
+
+    # ==========================================================
+    # SECTION 16 — Delete device setting (check mode, actual, idempotency)
+    # ==========================================================
+
+    - name: (Device) Delete client setting - check mode
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        state: absent
+      check_mode: true
+      register: _device_delete_check
+
+    - name: (Device) Verify setting still exists after check mode delete
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+      register: _info_after_device_delete_check
+
+    - name: Assert check mode delete reported change but kept the setting
+      ansible.builtin.assert:
+        that:
+          - _device_delete_check is changed
+          - _info_after_device_delete_check.client_settings | length == 1
+
+    - name: (Device) Delete client setting
+      microsoft.mecm.client_settings: &delete_device
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        state: absent
+      register: _device_delete
+
+    - name: (Device) Delete client setting - idempotency
+      microsoft.mecm.client_settings: *delete_device
+      register: _device_delete_idempotent
+
+    - name: (Device) Verify setting no longer exists
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+      register: _info_after_device_delete
+
+    - name: Assert device setting deleted, idempotent, and absent from info
+      ansible.builtin.assert:
+        that:
+          - _device_delete is changed
+          - _device_delete_idempotent is not changed
+          - _info_after_device_delete.client_settings | length == 0
+
+    # ==========================================================
+    # SECTION 17 — Delete user setting (check mode, actual, idempotency)
+    # ==========================================================
+
+    - name: (User) Delete client setting - check mode
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+        type: user
+        state: absent
+      check_mode: true
+      register: _user_delete_check
+
+    - name: (User) Verify setting still exists after check mode delete
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+      register: _info_after_user_delete_check
+
+    - name: Assert check mode delete reported change but kept the setting
+      ansible.builtin.assert:
+        that:
+          - _user_delete_check is changed
+          - _info_after_user_delete_check.client_settings | length == 1
+
+    - name: (User) Delete client setting
+      microsoft.mecm.client_settings: &delete_user
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+        type: user
+        state: absent
+      register: _user_delete
+
+    - name: (User) Delete client setting - idempotency
+      microsoft.mecm.client_settings: *delete_user
+      register: _user_delete_idempotent
+
+    - name: (User) Verify setting no longer exists
+      microsoft.mecm.client_settings_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+      register: _info_after_user_delete
+
+    - name: Assert user setting deleted, idempotent, and absent from info
+      ansible.builtin.assert:
+        that:
+          - _user_delete is changed
+          - _user_delete_idempotent is not changed
+          - _info_after_user_delete.client_settings | length == 0
+
+  always:
+    - name: Cleanup - ensure device test setting is removed
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_device_name }}"
+        type: device
+        state: absent
+      ignore_errors: true
+
+    - name: Cleanup - ensure user test setting is removed
+      microsoft.mecm.client_settings:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_user_name }}"
+        type: user
+        state: absent
+      ignore_errors: true
