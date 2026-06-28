@@ -1,0 +1,861 @@
+---
+# Integration tests for device_collection and device_collection_info modules
+
+- name: Set test variables
+  ansible.builtin.set_fact:
+    test_dc_name: "{{ unique_test_id }}-dc"
+    test_dc_name_periodic: "{{ unique_test_id }}-dc-periodic"
+    test_dc_rules_name: "{{ unique_test_id }}-dc-rules"
+
+- name: Test device collection lifecycle
+  block:
+
+    # -----------------------------------------------
+    # CREATE - check mode (manual refresh)
+    # -----------------------------------------------
+    - name: Create device collection - check mode
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+        limiting_collection_name: "{{ test_limiting_collection }}"
+        state: present
+      check_mode: true
+      register: _create_check
+
+    - name: Verify collection does not exist after check mode create
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+      register: _info_after_create_check
+
+    - name: Assert check mode create reported change and made no real change
+      ansible.builtin.assert:
+        that:
+          - _create_check is changed
+          - _create_check.device_collection.name == test_dc_name
+          - _create_check.device_collection.collection_id == 'check_mode'
+          - _create_check.device_collection.limiting_collection_name == test_limiting_collection
+          - _create_check.device_collection.refresh_type == 'Manual'
+          - _create_check.device_collection.device_collection_query_rules | length == 0
+          - _create_check.device_collection.device_collection_direct_rules | length == 0
+          - _info_after_create_check.device_collections | length == 0
+
+    # -----------------------------------------------
+    # CREATE - actual (manual refresh)
+    # -----------------------------------------------
+    - name: Create device collection
+      microsoft.mecm.device_collection: &create_dc
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+        limiting_collection_name: "{{ test_limiting_collection }}"
+        state: present
+      register: _create_dc
+
+    - name: Assert device collection created
+      ansible.builtin.assert:
+        that:
+          - _create_dc is changed
+          - _create_dc.device_collection.name == test_dc_name
+          - _create_dc.device_collection.limiting_collection_name == test_limiting_collection
+          - _create_dc.device_collection.refresh_type == 'Manual'
+          - _create_dc.device_collection.collection_id != 'check_mode'
+          - not _create_dc.device_collection.is_built_in
+          - _create_dc.device_collection.device_collection_query_rules | length == 0
+          - _create_dc.device_collection.device_collection_direct_rules | length == 0
+
+    # -----------------------------------------------
+    # CREATE - idempotency
+    # -----------------------------------------------
+    - name: Create device collection - idempotency
+      microsoft.mecm.device_collection: *create_dc
+      register: _create_dc_idempotent
+
+    - name: Assert idempotency on create
+      ansible.builtin.assert:
+        that:
+          - _create_dc_idempotent is not changed
+
+    # -----------------------------------------------
+    # INFO - query specific collection
+    # -----------------------------------------------
+    - name: Get specific device collection info
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+      register: _info_single
+
+    - name: Assert single collection info
+      ansible.builtin.assert:
+        that:
+          - _info_single.device_collections | length == 1
+          - _info_single.device_collections[0].name == test_dc_name
+          - _info_single.device_collections[0].limiting_collection_name == test_limiting_collection
+          - _info_single.device_collections[0].refresh_type == 'Manual'
+          - not _info_single.device_collections[0].is_built_in
+          - _info_single.device_collections[0].device_collection_query_rules | length == 0
+          - _info_single.device_collections[0].device_collection_direct_rules | length == 0
+
+    # -----------------------------------------------
+    # INFO - query all collections
+    # -----------------------------------------------
+    - name: Get all device collections
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+      register: _info_all
+
+    - name: Assert all collections returned and test collection is present
+      ansible.builtin.assert:
+        that:
+          - _info_all.device_collections | length >= 1
+          - _info_all.device_collections | selectattr('name', 'equalto', test_dc_name) | list | length == 1
+
+    # -----------------------------------------------
+    # UPDATE refresh_type - check mode
+    # -----------------------------------------------
+    - name: Change refresh_type to Periodic - check mode
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+        limiting_collection_name: "{{ test_limiting_collection }}"
+        refresh_type: Periodic
+        schedule_recur_interval: Days
+        schedule_recur_count: 1
+        schedule_start: "{{ test_schedule_start }}"
+      check_mode: true
+      register: _update_rt_check
+
+    - name: Get info after check mode refresh_type update
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+      register: _info_after_rt_check
+
+    - name: Assert check mode refresh_type change made no real change
+      ansible.builtin.assert:
+        that:
+          - _update_rt_check is changed
+          - _update_rt_check.device_collection.refresh_type == 'Periodic'
+          - _info_after_rt_check.device_collections[0].refresh_type == 'Manual'
+
+    # -----------------------------------------------
+    # UPDATE refresh_type - actual
+    # -----------------------------------------------
+    - name: Change refresh_type to Periodic with daily schedule
+      microsoft.mecm.device_collection: &update_rt_periodic
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+        limiting_collection_name: "{{ test_limiting_collection }}"
+        refresh_type: Periodic
+        schedule_recur_interval: Days
+        schedule_recur_count: 1
+        schedule_start: "{{ test_schedule_start }}"
+      register: _update_rt
+
+    - name: Get info after refresh_type update
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+      register: _info_after_rt
+
+    - name: Assert refresh_type updated to Periodic
+      ansible.builtin.assert:
+        that:
+          - _update_rt is changed
+          - _info_after_rt.device_collections[0].refresh_type == 'Periodic'
+
+    # -----------------------------------------------
+    # UPDATE refresh_type - idempotency
+    # -----------------------------------------------
+    - name: Change refresh_type to Periodic - idempotency
+      microsoft.mecm.device_collection: *update_rt_periodic
+      register: _update_rt_idempotent
+
+    - name: Assert idempotency on refresh_type update
+      ansible.builtin.assert:
+        that:
+          - _update_rt_idempotent is not changed
+
+    # -----------------------------------------------
+    # UPDATE refresh_type to Both
+    # -----------------------------------------------
+    - name: Change refresh_type to Both with schedule
+      microsoft.mecm.device_collection: &update_rt_both
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+        limiting_collection_name: "{{ test_limiting_collection }}"
+        refresh_type: Both
+        schedule_recur_interval: Days
+        schedule_recur_count: 1
+        schedule_start: "{{ test_schedule_start }}"
+      register: _update_rt_both
+
+    - name: Assert refresh_type updated to Both
+      ansible.builtin.assert:
+        that:
+          - _update_rt_both is changed
+
+    - name: Verify refresh_type is Both
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+      register: _info_after_both
+
+    - name: Assert collection refresh_type is Both
+      ansible.builtin.assert:
+        that:
+          - _info_after_both.device_collections[0].refresh_type == 'Both'
+
+    - name: Change refresh_type to Both with schedule - idempotency
+      microsoft.mecm.device_collection: *update_rt_both
+      register: _update_rt_both_idempotent
+
+    - name: Assert idempotency on Both refresh_type
+      ansible.builtin.assert:
+        that:
+          - _update_rt_both_idempotent is not changed
+
+    # -----------------------------------------------
+    # CREATE collection with periodic schedule
+    # -----------------------------------------------
+    - name: Create device collection with periodic refresh and schedule
+      microsoft.mecm.device_collection: &create_periodic
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name_periodic }}"
+        limiting_collection_name: "{{ test_limiting_collection }}"
+        refresh_type: Periodic
+        schedule_recur_interval: Days
+        schedule_recur_count: 1
+        schedule_start: "{{ test_schedule_start }}"
+        state: present
+      register: _create_periodic
+
+    - name: Assert periodic collection created
+      ansible.builtin.assert:
+        that:
+          - _create_periodic is changed
+          - _create_periodic.device_collection.refresh_type == 'Periodic'
+
+    - name: Create device collection with periodic refresh - idempotency
+      microsoft.mecm.device_collection: *create_periodic
+      register: _create_periodic_idempotent
+
+    - name: Assert idempotency on periodic collection create
+      ansible.builtin.assert:
+        that:
+          - _create_periodic_idempotent is not changed
+
+    # -----------------------------------------------
+    # INFO - query non-existent collection (warn)
+    # -----------------------------------------------
+    - name: Query non-existent device collection
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ unique_test_id }}-does-not-exist"
+      register: _info_missing
+
+    - name: Assert empty result for missing collection
+      ansible.builtin.assert:
+        that:
+          - _info_missing.device_collections | length == 0
+          - _info_missing.warnings | length > 0
+
+    # -----------------------------------------------
+    # REMOVE - check mode
+    # -----------------------------------------------
+    - name: Remove device collection - check mode
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+        state: absent
+      check_mode: true
+      register: _remove_check
+
+    - name: Verify collection still exists after check mode remove
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+      register: _info_after_remove_check
+
+    - name: Assert check mode remove reported change but made no real change
+      ansible.builtin.assert:
+        that:
+          - _remove_check is changed
+          - _info_after_remove_check.device_collections | length == 1
+
+    # -----------------------------------------------
+    # REMOVE - actual
+    # -----------------------------------------------
+    - name: Remove device collection
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+        state: absent
+      register: _remove_dc
+
+    - name: Assert device collection removed
+      ansible.builtin.assert:
+        that:
+          - _remove_dc is changed
+          - _remove_dc.device_collection.name == test_dc_name
+
+    - name: Verify collection is gone via info module
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+      register: _info_after_remove
+
+    - name: Assert collection no longer found
+      ansible.builtin.assert:
+        that:
+          - _info_after_remove.device_collections | length == 0
+
+    # -----------------------------------------------
+    # REMOVE - idempotency (already absent)
+    # -----------------------------------------------
+    - name: Remove device collection - idempotency (already absent)
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+        state: absent
+      register: _remove_dc_idempotent
+
+    - name: Assert no change when removing an already absent collection
+      ansible.builtin.assert:
+        that:
+          - _remove_dc_idempotent is not changed
+
+    # ===============================================
+    # QUERY RULES TESTS
+    # ===============================================
+
+    # -----------------------------------------------
+    # Setup - create collection for rules tests
+    # -----------------------------------------------
+    - name: Create collection for rules testing
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        limiting_collection_name: "{{ test_limiting_collection }}"
+        state: present
+      register: _create_rules_dc
+
+    - name: Assert rules test collection created
+      ansible.builtin.assert:
+        that:
+          - _create_rules_dc is changed
+
+    # -----------------------------------------------
+    # QUERY RULE - add - check mode
+    # -----------------------------------------------
+    - name: Add query rule - check mode
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_query_rules:
+          - rule_name: "{{ test_query_rule_name }}"
+            query_expression: "{{ test_query_expression }}"
+      check_mode: true
+      register: _add_qr_check
+
+    - name: Get info after check mode query rule add
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_after_qr_check
+
+    - name: Assert check mode query rule add reported change but made no real change
+      ansible.builtin.assert:
+        that:
+          - _add_qr_check is changed
+          - _add_qr_check.device_collection.device_collection_query_rules | length == 1
+          - _add_qr_check.device_collection.device_collection_query_rules[0].rule_name == test_query_rule_name
+          - _info_after_qr_check.device_collections[0].device_collection_query_rules | length == 0
+
+    # -----------------------------------------------
+    # QUERY RULE - add - actual
+    # -----------------------------------------------
+    - name: Add query rule
+      microsoft.mecm.device_collection: &add_query_rule
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_query_rules:
+          - rule_name: "{{ test_query_rule_name }}"
+            query_expression: "{{ test_query_expression }}"
+      register: _add_qr
+
+    - name: Assert query rule added
+      ansible.builtin.assert:
+        that:
+          - _add_qr is changed
+
+    - name: Get info after query rule add
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_after_qr_add
+
+    - name: Assert query rule present in info output
+      ansible.builtin.assert:
+        that:
+          - _info_after_qr_add.device_collections[0].device_collection_query_rules | length == 1
+          - _info_after_qr_add.device_collections[0].device_collection_query_rules[0].rule_name == test_query_rule_name
+
+    # -----------------------------------------------
+    # QUERY RULE - idempotency
+    # -----------------------------------------------
+    - name: Add query rule - idempotency
+      microsoft.mecm.device_collection: *add_query_rule
+      register: _add_qr_idempotent
+
+    - name: Assert idempotency on query rule add
+      ansible.builtin.assert:
+        that:
+          - _add_qr_idempotent is not changed
+
+    # -----------------------------------------------
+    # QUERY RULE - update expression - check mode
+    # -----------------------------------------------
+    - name: Update query rule expression - check mode
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_query_rules:
+          - rule_name: "{{ test_query_rule_name }}"
+            query_expression: "{{ test_query_expression_updated }}"
+      check_mode: true
+      register: _update_qr_check
+
+    - name: Get info after check mode query rule expression update
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_after_qr_update_check
+
+    - name: Assert check mode expression update reported change but made no real change
+      ansible.builtin.assert:
+        that:
+          - _update_qr_check is changed
+          - _info_after_qr_update_check.device_collections[0].device_collection_query_rules | length == 1
+
+    # -----------------------------------------------
+    # QUERY RULE - update expression - actual
+    # -----------------------------------------------
+    - name: Update query rule expression
+      microsoft.mecm.device_collection: &update_query_rule_expr
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_query_rules:
+          - rule_name: "{{ test_query_rule_name }}"
+            query_expression: "{{ test_query_expression_updated }}"
+      register: _update_qr
+
+    - name: Assert query rule expression updated
+      ansible.builtin.assert:
+        that:
+          - _update_qr is changed
+
+    # -----------------------------------------------
+    # QUERY RULE - update expression - idempotency
+    # -----------------------------------------------
+    - name: Update query rule expression - idempotency
+      microsoft.mecm.device_collection: *update_query_rule_expr
+      register: _update_qr_idempotent
+
+    - name: Assert idempotency on query rule expression update
+      ansible.builtin.assert:
+        that:
+          - _update_qr_idempotent is not changed
+
+    # -----------------------------------------------
+    # QUERY RULE - remove all (empty list) - check mode
+    # -----------------------------------------------
+    - name: Remove all query rules - check mode
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_query_rules: []
+      check_mode: true
+      register: _remove_qr_check
+
+    - name: Get info after check mode query rule removal
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_after_qr_remove_check
+
+    - name: Assert check mode removal reported change but made no real change
+      ansible.builtin.assert:
+        that:
+          - _remove_qr_check is changed
+          - _info_after_qr_remove_check.device_collections[0].device_collection_query_rules | length == 1
+
+    # -----------------------------------------------
+    # QUERY RULE - remove all (empty list) - actual
+    # -----------------------------------------------
+    - name: Remove all query rules
+      microsoft.mecm.device_collection: &remove_all_query_rules
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_query_rules: []
+      register: _remove_qr
+
+    - name: Assert query rules removed
+      ansible.builtin.assert:
+        that:
+          - _remove_qr is changed
+
+    - name: Get info after query rule removal
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_after_qr_remove
+
+    - name: Assert no query rules remain
+      ansible.builtin.assert:
+        that:
+          - _info_after_qr_remove.device_collections[0].device_collection_query_rules | length == 0
+
+    # -----------------------------------------------
+    # QUERY RULE - remove all (empty list) - idempotency
+    # -----------------------------------------------
+    - name: Remove all query rules - idempotency (already empty)
+      microsoft.mecm.device_collection: *remove_all_query_rules
+      register: _remove_qr_idempotent
+
+    - name: Assert no change when rules already empty
+      ansible.builtin.assert:
+        that:
+          - _remove_qr_idempotent is not changed
+
+    # ===============================================
+    # DIRECT RULES TESTS
+    # ===============================================
+
+    # -----------------------------------------------
+    # DIRECT RULE - add - check mode
+    # -----------------------------------------------
+    - name: Add direct rule - check mode
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_direct_rules:
+          - resource_id: "{{ test_direct_resource_id }}"
+      check_mode: true
+      register: _add_dr_check
+
+    - name: Get info after check mode direct rule add
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_after_dr_check
+
+    - name: Assert check mode direct rule add reported change but made no real change
+      ansible.builtin.assert:
+        that:
+          - _add_dr_check is changed
+          - _add_dr_check.device_collection.device_collection_direct_rules | length == 1
+          - _add_dr_check.device_collection.device_collection_direct_rules[0].resource_id == test_direct_resource_id
+          - _info_after_dr_check.device_collections[0].device_collection_direct_rules | length == 0
+
+    # -----------------------------------------------
+    # DIRECT RULE - add - actual
+    # -----------------------------------------------
+    - name: Add direct rule
+      microsoft.mecm.device_collection: &add_direct_rule
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_direct_rules:
+          - resource_id: "{{ test_direct_resource_id }}"
+      register: _add_dr
+
+    - name: Assert direct rule added
+      ansible.builtin.assert:
+        that:
+          - _add_dr is changed
+
+    - name: Get info after direct rule add
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_after_dr_add
+
+    - name: Assert direct rule present in info output
+      ansible.builtin.assert:
+        that:
+          - _info_after_dr_add.device_collections[0].device_collection_direct_rules | length == 1
+          - _info_after_dr_add.device_collections[0].device_collection_direct_rules[0].resource_id == test_direct_resource_id
+
+    # -----------------------------------------------
+    # DIRECT RULE - idempotency
+    # -----------------------------------------------
+    - name: Add direct rule - idempotency
+      microsoft.mecm.device_collection: *add_direct_rule
+      register: _add_dr_idempotent
+
+    - name: Assert idempotency on direct rule add
+      ansible.builtin.assert:
+        that:
+          - _add_dr_idempotent is not changed
+
+    # -----------------------------------------------
+    # DIRECT RULE - remove all (empty list) - check mode
+    # -----------------------------------------------
+    - name: Remove all direct rules - check mode
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_direct_rules: []
+      check_mode: true
+      register: _remove_dr_check
+
+    - name: Get info after check mode direct rule removal
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_after_dr_remove_check
+
+    - name: Assert check mode direct rule removal reported change but made no real change
+      ansible.builtin.assert:
+        that:
+          - _remove_dr_check is changed
+          - _info_after_dr_remove_check.device_collections[0].device_collection_direct_rules | length == 1
+
+    # -----------------------------------------------
+    # DIRECT RULE - remove all (empty list) - actual
+    # -----------------------------------------------
+    - name: Remove all direct rules
+      microsoft.mecm.device_collection: &remove_all_direct_rules
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_direct_rules: []
+      register: _remove_dr
+
+    - name: Assert direct rules removed
+      ansible.builtin.assert:
+        that:
+          - _remove_dr is changed
+
+    - name: Get info after direct rule removal
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_after_dr_remove
+
+    - name: Assert no direct rules remain
+      ansible.builtin.assert:
+        that:
+          - _info_after_dr_remove.device_collections[0].device_collection_direct_rules | length == 0
+
+    # -----------------------------------------------
+    # DIRECT RULE - remove all (empty list) - idempotency
+    # -----------------------------------------------
+    - name: Remove all direct rules - idempotency (already empty)
+      microsoft.mecm.device_collection: *remove_all_direct_rules
+      register: _remove_dr_idempotent
+
+    - name: Assert no change when direct rules already empty
+      ansible.builtin.assert:
+        that:
+          - _remove_dr_idempotent is not changed
+
+    # -----------------------------------------------
+    # COMBINED RULES - query and direct at once - check mode
+    # -----------------------------------------------
+    - name: Set both query and direct rules simultaneously - check mode
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_query_rules:
+          - rule_name: "{{ test_query_rule_name }}"
+            query_expression: "{{ test_query_expression }}"
+        device_collection_direct_rules:
+          - resource_id: "{{ test_direct_resource_id }}"
+      check_mode: true
+      register: _set_both_check
+
+    - name: Assert combined rules check mode reported change
+      ansible.builtin.assert:
+        that:
+          - _set_both_check is changed
+          - _set_both_check.device_collection.device_collection_query_rules | length == 1
+          - _set_both_check.device_collection.device_collection_direct_rules | length == 1
+
+    # -----------------------------------------------
+    # COMBINED RULES - query and direct at once - actual
+    # -----------------------------------------------
+    - name: Set both query and direct rules simultaneously
+      microsoft.mecm.device_collection: &set_both_rules
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_query_rules:
+          - rule_name: "{{ test_query_rule_name }}"
+            query_expression: "{{ test_query_expression }}"
+        device_collection_direct_rules:
+          - resource_id: "{{ test_direct_resource_id }}"
+      register: _set_both
+
+    - name: Assert both rule types were added
+      ansible.builtin.assert:
+        that:
+          - _set_both is changed
+
+    - name: Get info after combined rules set
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_after_both_rules
+
+    - name: Assert both rule types present in info output
+      ansible.builtin.assert:
+        that:
+          - _info_after_both_rules.device_collections[0].device_collection_query_rules | length == 1
+          - _info_after_both_rules.device_collections[0].device_collection_direct_rules | length == 1
+          - _info_after_both_rules.device_collections[0].device_collection_query_rules[0].rule_name == test_query_rule_name
+          - _info_after_both_rules.device_collections[0].device_collection_direct_rules[0].resource_id == test_direct_resource_id
+
+    # -----------------------------------------------
+    # COMBINED RULES - idempotency
+    # -----------------------------------------------
+    - name: Set both query and direct rules - idempotency
+      microsoft.mecm.device_collection: *set_both_rules
+      register: _set_both_idempotent
+
+    - name: Assert idempotency on combined rules
+      ansible.builtin.assert:
+        that:
+          - _set_both_idempotent is not changed
+
+    # -----------------------------------------------
+    # COMBINED RULES - remove all of both types - actual
+    # -----------------------------------------------
+    - name: Remove all rules of both types
+      microsoft.mecm.device_collection: &remove_all_rules
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_query_rules: []
+        device_collection_direct_rules: []
+      register: _remove_all
+
+    - name: Assert all rules removed
+      ansible.builtin.assert:
+        that:
+          - _remove_all is changed
+
+    - name: Get info after all rules removed
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_after_all_removed
+
+    - name: Assert collection has no rules of either type
+      ansible.builtin.assert:
+        that:
+          - _info_after_all_removed.device_collections[0].device_collection_query_rules | length == 0
+          - _info_after_all_removed.device_collections[0].device_collection_direct_rules | length == 0
+
+    # -----------------------------------------------
+    # COMBINED RULES - remove all - idempotency
+    # -----------------------------------------------
+    - name: Remove all rules - idempotency (already empty)
+      microsoft.mecm.device_collection: *remove_all_rules
+      register: _remove_all_idempotent
+
+    - name: Assert no change when all rules already empty
+      ansible.builtin.assert:
+        that:
+          - _remove_all_idempotent is not changed
+
+    # -----------------------------------------------
+    # RULES - omitting rule params leaves existing rules unchanged
+    # -----------------------------------------------
+    - name: Restore a query rule before testing omit behaviour
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+        device_collection_query_rules:
+          - rule_name: "{{ test_query_rule_name }}"
+            query_expression: "{{ test_query_expression }}"
+
+    - name: Update collection without specifying rules (rules should be untouched)
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: present
+      register: _update_no_rules
+
+    - name: Get info to verify rules were not removed
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_rules_untouched
+
+    - name: Assert existing rules remain when rule params are omitted
+      ansible.builtin.assert:
+        that:
+          - _update_no_rules is not changed
+          - _info_rules_untouched.device_collections[0].device_collection_query_rules | length == 1
+
+    # -----------------------------------------------
+    # RULES - delete rules collection with rules present
+    # -----------------------------------------------
+    - name: Delete collection that still has rules
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: absent
+      register: _delete_rules_dc
+
+    - name: Assert rules collection deleted
+      ansible.builtin.assert:
+        that:
+          - _delete_rules_dc is changed
+
+    - name: Verify rules collection is gone
+      microsoft.mecm.device_collection_info:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+      register: _info_rules_gone
+
+    - name: Assert rules collection no longer found
+      ansible.builtin.assert:
+        that:
+          - _info_rules_gone.device_collections | length == 0
+
+  always:
+    # -----------------------------------------------
+    # CLEANUP - ensure all test collections are removed
+    # -----------------------------------------------
+    - name: Cleanup - remove main test collection
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name }}"
+        state: absent
+      ignore_errors: true
+
+    - name: Cleanup - remove periodic test collection
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_name_periodic }}"
+        state: absent
+      ignore_errors: true
+
+    - name: Cleanup - remove rules test collection
+      microsoft.mecm.device_collection:
+        site_code: "{{ test_site_code }}"
+        name: "{{ test_dc_rules_name }}"
+        state: absent
+      ignore_errors: true

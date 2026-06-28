@@ -1,0 +1,303 @@
+---
+# Copyright: (c) 2026, Ansible Project
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+DOCUMENTATION:
+  module: device_collection
+  short_description: Create, update, or delete a Device Collection in MECM
+  description:
+    - Creates, updates, or removes a Device Collection in a Configuration Manager site.
+    - When C(refresh_type) is C(Periodic) or C(Both), a refresh schedule can be defined using
+      C(schedule_recur_interval), C(schedule_recur_count), and C(schedule_start). All three must
+      be provided together or omitted entirely.
+    - Supports query and direct membership rules using C(device_collection_query_rules) and
+      C(device_collection_direct_rules). Rules are reconciled idempotently - the module adds missing
+      rules, removes extra rules, and updates query rules whose expression has changed.
+  version_added: "1.1.0"
+  extends_documentation_fragment:
+    - microsoft.mecm.uses_cm_ps_module
+  options:
+    name:
+      description:
+        - The name of the device collection.
+        - Used to look up the collection for idempotency checks.
+      type: str
+      required: true
+    limiting_collection_name:
+      description:
+        - The name of the limiting collection that defines the scope of the device collection.
+        - Required when creating a new device collection (C(state=present) and the collection does not exist).
+        - Can be changed on an existing collection; the module will update it when the value differs.
+      type: str
+      required: false
+    refresh_type:
+      description:
+        - Specifies how MECM refreshes the collection membership.
+        - C(Manual) requires an administrator to manually trigger a refresh.
+        - C(Periodic) runs a full membership update on a schedule.
+        - C(Continuous) uses incremental updates triggered by resource discovery.
+        - C(Both) combines C(Periodic) full updates and C(Continuous) incremental updates.
+      type: str
+      choices:
+        - Manual
+        - Periodic
+        - Continuous
+        - Both
+      required: false
+    schedule_recur_interval:
+      description:
+        - The time unit for the schedule recurrence.
+        - All three schedule parameters (C(schedule_recur_interval), C(schedule_recur_count),
+          C(schedule_start)) must be provided together or omitted entirely.
+        - Only valid when C(refresh_type) is C(Periodic) or C(Both); the module fails if
+          schedule parameters are provided with any other C(refresh_type).
+      type: str
+      choices:
+        - Minutes
+        - Hours
+        - Days
+      required: false
+    schedule_recur_count:
+      description:
+        - The number of C(schedule_recur_interval) units between each recurrence.
+        - "Allowed ranges: C(Minutes) 1-59, C(Hours) 1-23, C(Days) 1-31."
+        - All three schedule parameters (C(schedule_recur_interval), C(schedule_recur_count),
+          C(schedule_start)) must be provided together or omitted entirely.
+        - Only valid when C(refresh_type) is C(Periodic) or C(Both).
+      type: int
+      required: false
+    schedule_start:
+      description:
+        - The date and time of the first occurrence of the scheduled event.
+        - Accepts any date/time string parseable by PowerShell, e.g. C(2026-06-09 08:00).
+        - All three schedule parameters (C(schedule_recur_interval), C(schedule_recur_count),
+          C(schedule_start)) must be provided together or omitted entirely.
+        - Only valid when C(refresh_type) is C(Periodic) or C(Both).
+      type: str
+      required: false
+    device_collection_query_rules:
+      description:
+        - List of query membership rules to enforce on the device collection.
+        - When provided as an empty list (C([])), all existing query rules are removed.
+        - When provided, the module reconciles query rules to exactly match the desired set
+          adding missing rules, removing extra rules, and updating rules whose expression has changed.
+        - Only valid when C(state=present).
+      type: list
+      elements: dict
+      required: false
+      suboptions:
+        rule_name:
+          description:
+            - The name that identifies this query rule within the collection.
+          type: str
+          required: true
+        query_expression:
+          description:
+            - The WQL query that defines collection membership.
+            - Example C(select SMS_R_System.ResourceId from SMS_R_System inner join SMS_G_System_TPM on SMS_G_System_TPM.ResourceID = SMS_R_System.ResourceId)
+          type: str
+          required: true
+    device_collection_direct_rules:
+      description:
+        - List of direct membership rules to enforce on the device collection.
+        - Each entry adds a single device by its MECM ResourceID.
+        - When omitted, existing direct rules are left unchanged.
+        - When provided as an empty list (C([])), all existing direct rules are removed.
+        - When provided, the module reconciles direct rules to exactly match the desired set.
+        - Only valid when C(state=present).
+      type: list
+      elements: dict
+      required: false
+      suboptions:
+        resource_id:
+          description:
+            - The ResourceID (C(SMS_R_System.ResourceId)) of the device to add directly to the collection.
+            - "Example: C(16777219)"
+          type: int
+          required: true
+    state:
+      description:
+        - Whether the device collection should be present or absent.
+      type: str
+      choices:
+        - present
+        - absent
+      default: present
+  author:
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
+
+EXAMPLES: |
+  - name: Create a device collection with manual refresh type
+    microsoft.mecm.device_collection:
+      site_code: "ECO"
+      name: "Windows 11"
+      limiting_collection_name: "All Systems"
+      state: present
+
+  - name: Create a device collection with a daily periodic schedule and refresh type
+    microsoft.mecm.device_collection:
+      site_code: "ECO"
+      name: "Servers - Production"
+      limiting_collection_name: "All Systems"
+      refresh_type: Periodic
+      schedule_recur_interval: Days
+      schedule_recur_count: 1
+      schedule_start: "2026-06-10 06:00"
+      state: present
+
+  - name: Create a device collection refreshing every 2 hours
+    microsoft.mecm.device_collection:
+      site_code: "ECO"
+      name: "Workstations - Finance"
+      limiting_collection_name: "All Workstations"
+      refresh_type: Both
+      schedule_recur_interval: Hours
+      schedule_recur_count: 2
+      schedule_start: "2026-06-10 06:00"
+      state: present
+
+  - name: Create a device collection with continuous incremental updates (no schedule needed)
+    microsoft.mecm.device_collection:
+      site_code: "ECO"
+      name: "Laptops"
+      limiting_collection_name: "All Systems"
+      refresh_type: Continuous
+      state: present
+
+  - name: Create a collection and add a query membership rule
+    microsoft.mecm.device_collection:
+      site_code: "ECO"
+      name: "TPM Systems"
+      limiting_collection_name: "All Systems"
+      state: present
+      device_collection_query_rules:
+        - rule_name: "TPM Devices"
+          query_expression: >
+            select SMS_R_System.ResourceId, SMS_R_System.ResourceType
+            from SMS_R_System inner join SMS_G_System_TPM
+            on SMS_G_System_TPM.ResourceID = SMS_R_System.ResourceId
+
+  - name: Add direct membership rules to an existing collection
+    microsoft.mecm.device_collection:
+      site_code: "ECO"
+      name: "Pilot Devices"
+      state: present
+      device_collection_direct_rules:
+        - resource_id: 16777219
+        - resource_id: 16777220
+
+  - name: Combine query and direct rules in one task
+    microsoft.mecm.device_collection:
+      site_code: "ECO"
+      name: "Mixed Rules Collection"
+      limiting_collection_name: "All Systems"
+      state: present
+      device_collection_query_rules:
+        - rule_name: "All Laptops"
+          query_expression: "select * from SMS_R_System where SMS_R_System.SystemRoles like '%Workstation%'"
+      device_collection_direct_rules:
+        - resource_id: 16777219
+
+  - name: Remove all query rules from a collection (leave direct rules untouched)
+    microsoft.mecm.device_collection:
+      site_code: "ECO"
+      name: "TPM Systems"
+      state: present
+      device_collection_query_rules: []
+
+  - name: Remove all direct rules from a collection (leave query rules untouched)
+    microsoft.mecm.device_collection:
+      site_code: "ECO"
+      name: "Pilot Devices"
+      state: present
+      device_collection_direct_rules: []
+
+  - name: Remove all rules of both types from a collection
+    microsoft.mecm.device_collection:
+      site_code: "ECO"
+      name: "Empty Collection"
+      state: present
+      device_collection_query_rules: []
+      device_collection_direct_rules: []
+
+  - name: Remove a device collection
+    microsoft.mecm.device_collection:
+      site_code: "ECO"
+      name: "Windows 11"
+      state: absent
+
+RETURN:
+  device_collection:
+    description:
+      - State of the device collection after the operation.
+      - For C(state=present) all fields including membership rules are returned.
+      - For C(state=absent) the pre-deletion collection properties are returned (without rules fields),
+        or an empty dict when the collection did not exist.
+    returned: always
+    type: dict
+    contains:
+      name:
+        description: Name of the device collection.
+        type: str
+        returned: always
+        sample: "Windows 11"
+      collection_id:
+        description:
+          - The unique ID of the device collection assigned by MECM.
+          - Set to C(check_mode) when the collection is being created in check mode.
+        type: str
+        returned: always
+        sample: "ECO00042"
+      limiting_collection_name:
+        description: Name of the limiting collection that scopes this collection.
+        type: str
+        returned: always
+        sample: "All Systems"
+      refresh_type:
+        description: The membership refresh type of the collection.
+        type: str
+        returned: always
+        sample: "Periodic"
+      member_count:
+        description: Number of devices currently in the collection.
+        type: int
+        returned: always
+        sample: 10
+      comment:
+        description: Optional description or comment for the collection.
+        type: str
+        returned: always
+        sample: "All Windows 11 devices"
+      is_built_in:
+        description: Whether the collection is a built-in MECM collection.
+        type: bool
+        returned: always
+        sample: false
+      device_collection_query_rules:
+        description: Query membership rules currently configured on the collection.
+        type: list
+        elements: dict
+        returned: when state is present
+        contains:
+          rule_name:
+            description: Name of the query rule.
+            type: str
+            sample: "TPM Devices"
+          query_expression:
+            description: WQL query expression that defines membership.
+            type: str
+            sample: "select SMS_R_System.ResourceId from SMS_R_System ..."
+      device_collection_direct_rules:
+        description: Direct membership rules currently configured on the collection.
+        type: list
+        elements: dict
+        returned: when state is present
+        contains:
+          resource_id:
+            description: ResourceID of the directly-added device.
+            type: int
+            sample: 16777219
+          rule_name:
+            description: Device name (RuleName) assigned by MECM to the direct rule.
+            type: str
+            sample: "WIN-UE71298AH9B"
