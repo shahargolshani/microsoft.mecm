@@ -4,14 +4,12 @@
 
 DOCUMENTATION:
   module: application_deployments
-  short_description: Create, update, or delete an Application Deployment in MECM
+  short_description: Create, update, or delete an Application Deployment in Microsoft Endpoint Configuration Manager (MECM)
   description:
     - Creates, updates, or removes a deployment of an application to a collection in MECM.
     - A deployment is uniquely identified by the combination of C(name) (application) and C(collection_name).
     - Idempotency is applied to C(available_date_time) and C(deadline_date_time).
     - C(deploy_action) and C(deploy_purpose) are creation-only; they cannot be changed on an existing deployment.
-    - Uses C(New-CMApplicationDeployment), C(Set-CMApplicationDeployment), and
-      C(Remove-CMApplicationDeployment) cmdlets.
     - The I(User Experience) settings of a deployment (e.g. user notifications, restart behavior,
       software installation outside maintenance windows) are not supported in this development phase.
     - The I(Alerts) settings of a deployment (e.g. SCOM alerts, compliance thresholds) are not
@@ -19,15 +17,7 @@ DOCUMENTATION:
   version_added: "1.1.0"
   extends_documentation_fragment:
     - microsoft.mecm.uses_cm_ps_module
-  requirements:
-    - Microsoft Endpoint Configuration Manager PowerShell module (ConfigurationManager)
-    - Administrative access to Microsoft Endpoint Configuration Manager site server
   options:
-    site_code:
-      description:
-        - The site code of the Configuration Manager site to connect to.
-      type: str
-      required: true
     name:
       description:
         - The name of the application to deploy.
@@ -117,7 +107,7 @@ DOCUMENTATION:
         - absent
       default: present
   author:
-    - "Ansible Project (@ansible)"
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
 
 EXAMPLES: |
   - name: Deploy application as required to All Users

@@ -4,25 +4,14 @@
 
 DOCUMENTATION:
   module: distribution_point_group
-  short_description: Create, update, or delete a Distribution Point Group in MECM
+  short_description: Create, update, or delete a Distribution Point Group in Microsoft Endpoint Configuration Manager (MECM)
   description:
     - Creates, updates, or removes a Distribution Point Group in a Configuration Manager site.
     - Manages group membership by adding or removing distribution points to reach the desired state.
-    - Uses C(New-CMDistributionPointGroup), C(Set-CMDistributionPointGroup),
-      C(Remove-CMDistributionPointGroup), C(Add-CMDistributionPointToGroup), and
-      C(Remove-CMDistributionPointFromGroup) cmdlets.
   version_added: "1.1.0"
   extends_documentation_fragment:
     - microsoft.mecm.uses_cm_ps_module
-  requirements:
-    - Microsoft Endpoint Configuration Manager PowerShell module (ConfigurationManager)
-    - Administrative access to Microsoft Endpoint Configuration Manager site server
   options:
-    site_code:
-      description:
-        - The site code of the Configuration Manager site to connect to.
-      type: str
-      required: true
     name:
       description:
         - The name of the distribution point group.
@@ -61,7 +50,7 @@ DOCUMENTATION:
         - absent
       default: present
   author:
-    - "Ansible Project (@ansible)"
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
 
 EXAMPLES: |
   - name: Create a distribution point group

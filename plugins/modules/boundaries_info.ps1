@@ -5,34 +5,7 @@
 
 #AnsibleRequires -CSharpUtil Ansible.Basic
 #AnsibleRequires -PowerShell ..module_utils._CMPsSetupUtils
-
-
-# Maps boundary type string names to the integer values stored in BoundaryType by Get-CMBoundary.
-$BOUNDARY_TYPE_INT = @{
-    IPSubnet = 0
-    ADSite = 1
-    IPV6Prefix = 2
-    IPRange = 3
-    Vpn = 4
-}
-
-
-function Format-BoundaryResult {
-    param (
-        [Parameter(Mandatory = $true)][object]$boundary
-    )
-    $type_int = [int]$boundary.BoundaryType
-    $type_str = ($BOUNDARY_TYPE_INT.GetEnumerator() | Where-Object { $_.Value -eq $type_int } | Select-Object -First 1).Key
-
-    return @{
-        boundary_id = $boundary.BoundaryID.ToString()
-        name = $boundary.DisplayName
-        type = $type_str
-        type_id = $type_int
-        value = $boundary.Value
-        group_count = [int]$boundary.GroupCount
-    }
-}
+#AnsibleRequires -PowerShell ..module_utils._BoundaryUtils
 
 
 $spec = @{
@@ -71,7 +44,7 @@ catch {
 }
 
 if ($null -ne $type -and $type -ne '') {
-    $desired_type_int = $BOUNDARY_TYPE_INT[$type]
+    $desired_type_int = ConvertTo-BoundaryTypeInt -TypeStr $type
     $all_boundaries = @($all_boundaries | Where-Object { [int]$_.BoundaryType -eq $desired_type_int })
 }
 

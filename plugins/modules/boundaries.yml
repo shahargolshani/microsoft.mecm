@@ -4,29 +4,19 @@
 
 DOCUMENTATION:
   module: boundaries
-  short_description: Create or delete site boundaries in Microsoft Endpoint Configuration Manager (MECM)
+  short_description: Create, update, or delete site boundaries in Microsoft Endpoint Configuration Manager (MECM)
   description:
-    - This module creates or deletes site boundaries in a Configuration Manager site.
-    - Uses the V(New-CMBoundary) and V(Remove-CMBoundary) PowerShell cmdlets.
+    - This module creates, updates, or deletes site boundaries in a Configuration Manager site.
     - The unique identifier of a boundary is the combination of O(type) and O(value).
       There can be multiple boundaries with the same O(name), but not with the same O(type) and O(value).
     - O(type) and O(value) are the lookup key used to find an existing boundary.
     - To change O(type) or O(value), remove the old boundary with O(state=absent) and create a new one.
     - For more information, see
       U(https://learn.microsoft.com/en-us/powershell/module/configurationmanager/new-cmboundary).
-  version_added: "1.2.0"
+  version_added: "1.1.0"
   extends_documentation_fragment:
     - microsoft.mecm.uses_cm_ps_module
-  requirements:
-    - Microsoft Endpoint Configuration Manager PowerShell module (ConfigurationManager)
-    - Administrative access to Microsoft Endpoint Configuration Manager site server
   options:
-    site_code:
-      description:
-        - The site code of the Configuration Manager site to connect to.
-        - This determines which CM site drive to use and is required for connecting to the correct domain.
-      type: str
-      required: true
     name:
       description:
         - The optional display name (V(DisplayName)) to assign to the boundary when creating it.
@@ -87,14 +77,12 @@ DOCUMENTATION:
         - absent
       default: present
   notes:
-    - This module requires the Microsoft Endpoint Configuration Manager Console to be installed on the target machine.
     - To change the O(type) or O(value) of an existing boundary, remove it with O(state=absent) first and
       then recreate it with the new O(type) and O(value).
-    - This module supports idempotency and check mode (V(-WhatIf)).
+    - This module supports idempotency and check mode.
     - "B(Permissions): Requires administrative access to create and delete MECM boundaries."
   author:
-    - Ansible Ecosystem Engineering team (@ansible)
-    - Shahar Golshani (@shahargolshani)
+    - Ansible Ecosystem Engineering team (@eco-ansible-content)
 
 EXAMPLES: |
   - name: Create an IP subnet boundary (subnet ID only, not CIDR notation)
